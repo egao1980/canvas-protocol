@@ -42,12 +42,15 @@
   (:documentation "Render CHART with BACKEND to an html-protocol node."))
 
 (defmethod render-chart ((backend null) chart &key)
-  (declare (ignore chart))
-  (%h4h0-pending 'render-chart))
+  (error 'chart-backend-missing :chart chart))
 
 (defun chart-node (chart &key (backend *chart-backend*))
-  (declare (ignore chart backend))
-  (%h4h0-pending 'chart-node))
+  (unless (chart-p chart)
+    (%canvas-error "chart-node needs a chart: ~S" chart))
+  (restart-case (render-chart backend chart)
+    (use-value (other-backend)
+      :report "Render the chart with another backend."
+      (chart-node chart :backend other-backend))))
 
 (defclass axis ()
   ((label :initarg :label :initform nil :reader axis-label)
@@ -78,14 +81,109 @@
 (defun chart-p (object)
   (typep object 'chart))
 
+(defun %invalid (field control &rest args)
+  (error 'invalid-chart :field field :reason (apply #'format nil control args)))
+
+(defun %point-ok-p (kind point)
+  (ecase kind
+    ((:line :scatter) (and (consp point) (realp (car point)) (realp (cdr point))))
+    (:bar (and (consp point) (stringp (car point)) (realp (cdr point))))
+    (:histogram (realp point))))
+
+(defun %axis-values (kind series axis)
+  "The real values the chart puts on AXIS (:x or :y)."
+  (loop for s in series
+        nconc (map 'list
+                   (lambda (p)
+                     (ecase kind
+                       ((:line :scatter) (if (eq axis :x) (car p) (cdr p)))
+                       (:bar (if (eq axis :x) nil (cdr p)))
+                       (:histogram (if (eq axis :x) p nil))))
+                   (series-points s))))
+
+(defun %validate-series (kind series)
+  (unless (and (consp series) (%proper-list-p series))
+    (%invalid :series "a chart needs a non-empty list of series"))
+  (dolist (s series)
+    (unless (typep s 'series)
+      (%invalid :series "not a series: ~S" s))
+    (unless (stringp (series-name s))
+      (%invalid :series "series name must be a string: ~S" (series-name s)))
+    (let ((points (series-points s))
+          (point-labels (series-labels s)))
+      (unless (and (typep points 'sequence)
+                   (or (vectorp points) (%proper-list-p points)))
+        (%invalid :series "series ~S: points must be a list or vector" (series-name s)))
+      (unless (every (lambda (p) (%point-ok-p kind p)) points)
+        (%invalid :series "series ~S: points must be ~A for a ~(~A~) chart" (series-name s)
+                  (ecase kind
+                    ((:line :scatter) "(real . real)")
+                    (:bar "(string . real)")
+                    (:histogram "reals"))
+                  kind))
+      (when point-labels
+        (unless (and (typep point-labels 'sequence)
+                     (or (vectorp point-labels) (%proper-list-p point-labels))
+                     (= (length point-labels) (length points)))
+          (%invalid :series "series ~S: labels must match the points in length"
+                    (series-name s))))))
+  (let ((names (mapcar #'series-name series)))
+    (unless (= (length names) (length (remove-duplicates names :test #'string=)))
+      (%invalid :series "duplicate series names in ~S" names))))
+
+(defun %validate-chart-axis (field axis points)
+  (unless (typep axis 'axis)
+    (%invalid field "not an axis: ~S" axis))
+  (let ((min (axis-min axis))
+        (max (axis-max axis))
+        (reals (remove-if-not #'realp points)))
+    (when (and min max (>= min max))
+      (%invalid field "min ~A must be below max ~A" min max))
+    (case (axis-scale axis)
+      (:log
+       (when (or (and min (<= min 0)) (and max (<= max 0)) (some (lambda (v) (<= v 0)) reals))
+         (%invalid field "a log scale needs positive values and bounds")))
+      (:time
+       (unless (every (lambda (v) (typep v '(integer 0))) reals)
+         (%invalid field "a time scale needs non-negative integer values (universal times)"))))))
+
 (defun validate-chart (chart)
   "Return CHART or signal INVALID-CHART."
-  (declare (ignore chart))
-  (%h4h0-pending 'validate-chart))
+  (let ((kind (chart-kind chart))
+        (series (chart-series chart)))
+    (unless (member kind +chart-kinds+)
+      (%invalid :kind "kind ~S is not one of ~S" kind +chart-kinds+))
+    (%validate-series kind series)
+    (%validate-chart-axis :x-axis (chart-x-axis chart) (%axis-values kind series :x))
+    (%validate-chart-axis :y-axis (chart-y-axis chart) (%axis-values kind series :y))
+    (when (eq kind :histogram)
+      (unless (typep (chart-bins chart) '(integer 1))
+        (%invalid :bins "bins must be a positive integer: ~S" (chart-bins chart))))
+    (unless (typep (chart-width chart) '(integer 1))
+      (%invalid :width "width must be a positive integer: ~S" (chart-width chart)))
+    (unless (typep (chart-height chart) '(integer 1))
+      (%invalid :height "height must be a positive integer: ~S" (chart-height chart)))
+    (unless (member (chart-legend chart) '(:auto t nil))
+      (%invalid :legend "legend must be :auto, T or NIL: ~S" (chart-legend chart)))
+    chart))
 
 (defun %validate-axis (axis)
-  (declare (ignore axis))
-  (%h4h0-pending 'make-axis))
+  (unless (member (axis-scale axis) +axis-scales+)
+    (%invalid :scale "scale ~S is not one of ~S" (axis-scale axis) +axis-scales+))
+  (unless (or (null (axis-min axis)) (realp (axis-min axis)))
+    (%invalid :min "min must be a real: ~S" (axis-min axis)))
+  (unless (or (null (axis-max axis)) (realp (axis-max axis)))
+    (%invalid :max "max must be a real: ~S" (axis-max axis)))
+  (let ((ticks (axis-ticks axis)))
+    (unless (and (%proper-list-p ticks) (every #'realp ticks))
+      (%invalid :ticks "ticks must be a list of reals: ~S" ticks)))
+  axis)
+
+(defmethod render ((c chart))
+  (restart-case (chart-node c)
+    (use-placeholder ()
+      :report "Render a placeholder figure instead of the chart."
+      (el :figure '(:data-chart "missing") (el :figcaption nil (chart-title c))))))
 
 (defun make-axis (&key label (scale :linear) min max ticks format)
   (%validate-axis (make-instance 'axis :label label :scale scale :min min :max max

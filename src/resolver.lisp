@@ -43,13 +43,39 @@ a normalized alist of (name . string)."))
   (check-type asset-prefix string)
   (make-instance 'path-resolver :prefix prefix :asset-prefix asset-prefix))
 
+(defun %resolver ()
+  (or *canvas-resolver* (error 'canvas-no-resolver)))
+
+(defparameter +hex-digits+ "0123456789ABCDEF")
+
+(defun %unreserved-octet-p (octet)
+  (let ((c (code-char octet)))
+    (or (%ascii-alnum-p c) (find c "-._~"))))
+
+(defun %percent-encode (string)
+  "RFC 3986 percent-encoding of the UTF-8 bytes of STRING (uppercase hex)."
+  (with-output-to-string (out)
+    (loop for octet across (stack-encoding:encode-to-octets string :encoding :utf-8)
+          do (if (%unreserved-octet-p octet)
+                 (write-char (code-char octet) out)
+                 (progn (write-char #\% out)
+                        (write-char (char +hex-digits+ (ash octet -4)) out)
+                        (write-char (char +hex-digits+ (logand octet 15)) out))))))
+
+(defun %query-string (params)
+  (format nil "~{~A~^&~}"
+          (mapcar (lambda (p) (%str (%percent-encode (car p)) "=" (%percent-encode (cdr p))))
+                  params)))
+
 (defmethod resolve-canvas-url ((resolver path-resolver) symbol params)
-  (declare (ignore symbol params))
-  (%h4h0-pending 'resolve-canvas-url))
+  (%str (path-resolver-prefix resolver)
+        (%percent-encode (package-name (symbol-package symbol)))
+        "::"
+        (%percent-encode (symbol-name symbol))
+        (if params (%str "?" (%query-string params)) "")))
 
 (defmethod resolve-asset-url ((resolver path-resolver) name)
-  (declare (ignore name))
-  (%h4h0-pending 'resolve-asset-url))
+  (%str (path-resolver-asset-prefix resolver) name))
 
 (defclass freeze-resolver (canvas-resolver) ()
   (:documentation "Used by FREEZE: no canvas or asset has a URL."))
@@ -59,11 +85,11 @@ a normalized alist of (name . string)."))
 
 (defmethod resolve-canvas-url ((resolver freeze-resolver) symbol params)
   (declare (ignore symbol params))
-  (%h4h0-pending 'resolve-canvas-url))
+  nil)
 
 (defmethod resolve-asset-url ((resolver freeze-resolver) name)
   (declare (ignore name))
-  (%h4h0-pending 'resolve-asset-url))
+  nil)
 
 (defclass canvas-link ()
   ((function :initarg :function :reader canvas-link-function)
@@ -74,17 +100,51 @@ a normalized alist of (name . string)."))
 (defun canvas-link-p (object)
   (typep object 'canvas-link))
 
+(defun %param-value (key value)
+  (cond ((stringp value) value)
+        ((integerp value) (format nil "~D" value))
+        ((eq value t) "true")
+        ((symbolp value) (string-downcase (symbol-name value)))
+        (t (%canvas-error "param ~A: value must be a string, integer or symbol, not ~S"
+                          key value))))
+
+(defun %normalize-params (plist &optional base)
+  "Param PLIST merged over the normalized alist BASE -> a fresh alist (name . string)."
+  (unless (%plist-p plist)
+    (%canvas-error "params must be a plist: ~S" plist))
+  (let ((acc (copy-alist base)))
+    (loop for (key value) on plist by #'cddr
+          for name = (if (and key (symbolp key))
+                         (string-downcase (symbol-name key))
+                         (%canvas-error "param name must be a symbol: ~S" key))
+          when value
+            do (let ((string (%param-value name value))
+                     (cell (assoc name acc :test #'string=)))
+                 (if cell
+                     (setf (cdr cell) string)
+                     (setf acc (append acc (list (cons name string)))))))
+    acc))
+
 (defun canvas-link (function &rest params)
   "Link to the canvas FUNCTION (an fbound symbol) with PARAMS (a plist)."
-  (declare (ignore function params))
-  (%h4h0-pending 'canvas-link))
+  (unless (and function (symbolp function) (not (keywordp function))
+               (symbol-package function) (fboundp function))
+    (%canvas-error "a canvas must be an fbound, interned, non-keyword symbol: ~S" function))
+  (make-instance 'canvas-link :function function :params (%normalize-params params)))
+
+(defun %link-merge (link &rest params)
+  "A new CANVAS-LINK: LINK's function with PARAMS merged over its params."
+  (unless (canvas-link-p link)
+    (%canvas-error "not a canvas-link: ~S" link))
+  (make-instance 'canvas-link
+                 :function (canvas-link-function link)
+                 :params (%normalize-params params (canvas-link-params link))))
 
 (defun link-url (link &rest params)
   "Resolve LINK (with PARAMS merged over its own) through *CANVAS-RESOLVER*."
-  (declare (ignore link params))
-  (%h4h0-pending 'link-url))
+  (let ((merged (apply #'%link-merge link params)))
+    (resolve-canvas-url (%resolver) (canvas-link-function merged) (canvas-link-params merged))))
 
 (defun canvas-url (function &rest params)
   "(link-url (apply #'canvas-link function params))."
-  (declare (ignore function params))
-  (%h4h0-pending 'canvas-url))
+  (link-url (apply #'canvas-link function params)))

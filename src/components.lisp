@@ -101,3 +101,142 @@
 
 (defun live-region (link event &key id content swap attrs)
   (%make 'live-region :link link :event event :id id :content content :swap swap :attrs attrs))
+
+;;; Validation
+
+(defun %gap-attr (gap)
+  (if (eq gap :m) nil (string-downcase (symbol-name gap))))
+
+(defun %check-gap (gap)
+  (unless (member gap '(:none :s :m :l))
+    (%canvas-error "gap must be one of :none :s :m :l, not ~S" gap)))
+
+(defmethod validate-component ((c stack))
+  (%check-gap (layout-gap c))
+  (unless (member (stack-direction c) '(:vertical :horizontal))
+    (%canvas-error "direction must be :vertical or :horizontal, not ~S" (stack-direction c)))
+  (call-next-method))
+
+(defmethod validate-component ((c grid))
+  (unless (typep (grid-columns c) '(integer 1 6))
+    (%canvas-error "grid columns must be an integer 1..6, not ~S" (grid-columns c)))
+  (%check-gap (layout-gap c))
+  (call-next-method))
+
+(defun %tab-key (tab) (if (consp tab) (car tab) tab))
+(defun %tab-label (tab) (if (consp tab) (cdr tab) tab))
+
+(defmethod validate-component ((c tabs))
+  (let ((tabs (tabs-tabs c))
+        (active (tabs-active c)))
+    (unless (stringp (component-id c))
+      (%canvas-error "tabs need an :id (the hx-target of the tab buttons)"))
+    (unless (and (consp tabs) (%proper-list-p tabs))
+      (%canvas-error "tabs must be a non-empty list: ~S" tabs))
+    (dolist (tab tabs)
+      (unless (stringp (%tab-key tab))
+        (%canvas-error "a tab is a string or a (key . label) cons with a string key: ~S" tab)))
+    (let ((keys (mapcar #'%tab-key tabs)))
+      (unless (= (length keys) (length (remove-duplicates keys :test #'string=)))
+        (%canvas-error "duplicate tab keys in ~S" keys))
+      (unless (or (null active) (member active keys :test #'equal))
+        (%canvas-error "active tab ~S is not one of ~S" active keys)))
+    (unless (or (null (tabs-link c)) (canvas-link-p (tabs-link c)))
+      (%canvas-error "tabs :link must be a canvas-link: ~S" (tabs-link c))))
+  (call-next-method))
+
+(defmethod validate-component ((c code-block))
+  (let ((language (code-block-language c)))
+    (unless (or (null language)
+                (%token-p language #'%code-language-char-p #'%code-language-char-p))
+      (%canvas-error "code-block language must match [a-z0-9+#-]+, not ~S" language)))
+  (call-next-method))
+
+(defun %code-language-char-p (c)
+  (or (%ascii-lower-p c) (%ascii-digit-p c) (find c "+#-")))
+
+(defmethod validate-component ((c kv-list))
+  (unless (every #'consp (kv-list-pairs c))
+    (%canvas-error "kv-list pairs must be an alist: ~S" (kv-list-pairs c)))
+  (call-next-method))
+
+(defparameter +badge-statuses+ '(:neutral :info :ok :warn :error))
+
+(defmethod validate-component ((c badge))
+  (unless (member (badge-status c) +badge-statuses+)
+    (%canvas-error "badge status must be one of ~S, not ~S" +badge-statuses+ (badge-status c)))
+  (call-next-method))
+
+(defmethod validate-component ((c live-region))
+  (unless (canvas-link-p (live-region-link c))
+    (%canvas-error "live-region link must be a canvas-link: ~S" (live-region-link c)))
+  (%event-name (live-region-event c))
+  (when (live-region-swap c) (hx-swap-value (live-region-swap c)))
+  (call-next-method))
+
+;;; Rendering
+
+(defmethod render ((c stack))
+  (el :div (%own c :data-layout (if (eq (stack-direction c) :horizontal) "row" "stack")
+                   :data-gap (%gap-attr (layout-gap c)))
+      (component-children c)))
+
+(defmethod render ((c grid))
+  (el :div (%own c :data-layout "grid" :data-columns (grid-columns c)
+                   :data-gap (%gap-attr (layout-gap c)))
+      (component-children c)))
+
+(defmethod render ((c card))
+  (el :article (%own c)
+      (when (card-title c) (el :header nil (el :h3 nil (card-title c))))
+      (component-children c)
+      (when (card-footer c) (el :footer nil (card-footer c)))))
+
+(defmethod render ((c details))
+  (el :details (%own c :open (and (details-open-p c) t))
+      (el :summary nil (details-summary c))
+      (component-children c)))
+
+(defmethod render ((c fieldset))
+  (el :fieldset (%own c)
+      (when (fieldset-legend c) (el :legend nil (fieldset-legend c)))
+      (component-children c)))
+
+(defmethod render ((c tabs))
+  (let* ((tabs (tabs-tabs c))
+         (active (or (tabs-active c) (%tab-key (first tabs))))
+         (link (tabs-link c))
+         (target (%str "#" (component-id c))))
+    (el :section (%own c)
+        (el :nav '(:role "tablist")
+            (loop for tab in tabs
+                  for key = (%tab-key tab)
+                  collect (el :button
+                              (append (list :type "button" :role "tab"
+                                            :aria-selected (if (equal key active) "true" "false"))
+                                      (when link
+                                        (hx-get (%link-merge link :tab key)
+                                                :target target :swap :outer-html)))
+                              (%tab-label tab))))
+        (el :div '(:role "tabpanel") (tabs-content c)))))
+
+(defmethod render ((c code-block))
+  (el :pre (%own c)
+      (el :code (list :data-language (code-block-language c)) (code-block-text c))))
+
+(defmethod render ((c kv-list))
+  (el :dl (%own c)
+      (loop for (key . value) in (kv-list-pairs c)
+            collect (el :dt nil key)
+            collect (el :dd nil value))))
+
+(defmethod render ((c badge))
+  (el :span (%own c :data-badge (string-downcase (symbol-name (badge-status c))))
+      (badge-text c)))
+
+(defmethod render ((c live-region))
+  (let* ((connect (sse-connect (live-region-link c)))
+         (sse (when connect
+                (append connect (sse-swap (live-region-event c) :swap (live-region-swap c))))))
+    (el :div (apply #'%own c (append sse (list :aria-live "polite")))
+        (live-region-content c))))

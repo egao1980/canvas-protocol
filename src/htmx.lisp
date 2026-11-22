@@ -47,42 +47,156 @@
     (:delete . "delete") (:none . "none"))
   "Keyword -> htmx hx-swap style.")
 
+(defun %event-name-p (string)
+  "STRING matches [A-Za-z0-9_.:-]+ (ASCII only)."
+  (%token-p string
+            (lambda (c) (or (%ascii-alnum-p c) (find c "_.:-")))
+            (lambda (c) (or (%ascii-alnum-p c) (find c "_.:-")))))
+
+(defun %event-name (name)
+  (unless (%event-name-p name)
+    (%canvas-error "invalid event name ~S (must match [A-Za-z0-9_.:-]+)" name))
+  name)
+
+(defun %no-crlf (what string)
+  (when (or (find #\Return string) (find #\Newline string))
+    (%canvas-error "~A must not contain CR or LF: ~S" what string))
+  string)
+
+(defun %string-option (key value)
+  (unless (stringp value)
+    (%canvas-error "~(~A~) must be a string: ~S" key value))
+  value)
+
 (defun hx-swap-value (swap)
   "SWAP keyword or string -> the hx-swap attribute string. Invalid -> CANVAS-ERROR."
-  (declare (ignore swap))
-  (%h4h0-pending 'hx-swap-value))
+  (cond ((keywordp swap)
+         (or (cdr (assoc swap +htmx-swap-styles+))
+             (%canvas-error "unknown hx-swap style ~S" swap)))
+        ((stringp swap)
+         (let ((style (subseq swap 0 (or (position #\Space swap) (length swap)))))
+           (unless (member style +htmx-swap-styles+ :key #'cdr :test #'string=)
+             (%canvas-error "unknown hx-swap style ~S" swap))
+           swap))
+        (t (%canvas-error "hx-swap must be a keyword or string: ~S" swap))))
+
+(defun %hx-url (verb link)
+  (cond ((stringp link)
+         (when (%javascript-url-p link)
+           (%csp-error :javascript-url nil (string-downcase (symbol-name verb))))
+         link)
+        (t (link-url link))))
+
+(defun %hx-trigger (trigger)
+  (%string-option :trigger trigger)
+  (when (find #\[ trigger)
+    (%csp-error :eval-trigger nil "hx-trigger"))
+  (%no-crlf "hx-trigger" trigger))
+
+(defun %hx-vals (vals)
+  (let ((alist (%normalize-params vals)))
+    (when alist (stack-json:encode alist))))
+
+(defun %hx-push-url (push-url)
+  (if (eq push-url t) "true" (%string-option :push-url push-url)))
+
+(defun %hx (verb link target swap trigger select include vals push-url confirm indicator)
+  "Shared body of HX-GET / HX-POST: options are validated first, then a NIL URL -> NIL."
+  (let* ((url (%hx-url verb link))
+         (pairs (list (cons :hx-target (and target (%string-option :target target)))
+                      (cons :hx-swap (and swap (hx-swap-value swap)))
+                      (cons :hx-trigger (and trigger (%hx-trigger trigger)))
+                      (cons :hx-select (and select (%string-option :select select)))
+                      (cons :hx-include (and include (%string-option :include include)))
+                      (cons :hx-vals (and vals (%hx-vals vals)))
+                      (cons :hx-push-url (and push-url (%hx-push-url push-url)))
+                      (cons :hx-confirm (and confirm (%string-option :confirm confirm)))
+                      (cons :hx-indicator (and indicator (%string-option :indicator indicator))))))
+    (when url
+      (list* verb url
+             (loop for (key . value) in pairs
+                   when value nconc (list key value))))))
 
 (defun hx-get (link &key target swap trigger select include vals push-url confirm indicator)
   "Attribute plist for an hx-get to LINK. See the file header."
-  (declare (ignore link target swap trigger select include vals push-url confirm indicator))
-  (%h4h0-pending 'hx-get))
+  (%hx :hx-get link target swap trigger select include vals push-url confirm indicator))
 
 (defun hx-post (link &key target swap trigger select include vals push-url confirm indicator)
   "Attribute plist for an hx-post to LINK. See the file header."
-  (declare (ignore link target swap trigger select include vals push-url confirm indicator))
-  (%h4h0-pending 'hx-post))
+  (%hx :hx-post link target swap trigger select include vals push-url confirm indicator))
+
+(defun %header-value (key value)
+  (cond ((stringp value) value)
+        ((eq value t) "true")
+        (t (%canvas-error "~(~A~) must be a string or T: ~S" key value))))
+
+(defun %trigger-header (value)
+  (cond ((stringp value) (%event-name value))
+        ((and (consp value) (symbolp (first value)))
+         ;; A plist (:event "detail" ...) -> JSON object, encoded by json-protocol.
+         (unless (%plist-p value)
+           (%canvas-error "trigger plist must have even length: ~S" value))
+         (let ((alist '()))
+           (loop for (key detail) on value by #'cddr
+                 for name = (%event-name (if (and key (symbolp key))
+                                             (string-downcase (symbol-name key))
+                                             (%canvas-error "trigger event must be a symbol: ~S" key)))
+                 do (unless (stringp detail)
+                      (%canvas-error "trigger ~A: detail must be a string: ~S" name detail))
+                    (let ((cell (assoc name alist :test #'string=)))
+                      (if cell
+                          (setf (cdr cell) detail)
+                          (setf alist (append alist (list (cons name detail)))))))
+           (stack-json:encode alist)))
+        ((consp value)
+         (format nil "~{~A~^, ~}" (mapcar #'%trigger-header-name value)))
+        (t (%canvas-error "invalid trigger ~S" value))))
+
+(defun %trigger-header-name (name)
+  (unless (stringp name)
+    (%canvas-error "trigger event must be a string: ~S" name))
+  (%event-name name))
 
 (defun htmx-response-headers (&key location push-url redirect refresh replace-url
                                    reselect reswap retarget trigger
                                    trigger-after-settle trigger-after-swap)
   "HX-* response headers as an alist, for the codec to send. See the file header."
-  (declare (ignore location push-url redirect refresh replace-url reselect reswap
-                   retarget trigger trigger-after-settle trigger-after-swap))
-  (%h4h0-pending 'htmx-response-headers))
+  (let ((headers
+          (loop for (name key value convert)
+                  in (list (list "HX-Location" :location location #'%header-value)
+                           (list "HX-Push-Url" :push-url push-url #'%header-value)
+                           (list "HX-Redirect" :redirect redirect #'%header-value)
+                           (list "HX-Refresh" :refresh refresh #'%header-value)
+                           (list "HX-Replace-Url" :replace-url replace-url #'%header-value)
+                           (list "HX-Reselect" :reselect reselect #'%header-value)
+                           (list "HX-Reswap" :reswap reswap
+                                 (lambda (k v) (declare (ignore k)) (hx-swap-value v)))
+                           (list "HX-Retarget" :retarget retarget #'%header-value)
+                           (list "HX-Trigger" :trigger trigger
+                                 (lambda (k v) (declare (ignore k)) (%trigger-header v)))
+                           (list "HX-Trigger-After-Settle" :trigger-after-settle trigger-after-settle
+                                 (lambda (k v) (declare (ignore k)) (%trigger-header v)))
+                           (list "HX-Trigger-After-Swap" :trigger-after-swap trigger-after-swap
+                                 (lambda (k v) (declare (ignore k)) (%trigger-header v))))
+                when value
+                  collect (cons name (%no-crlf name (funcall convert key value))))))
+    (stable-sort headers #'string< :key #'car)))
 
 (defun sse-connect (link)
-  (declare (ignore link))
-  (%h4h0-pending 'sse-connect))
+  (let ((url (link-url link)))
+    (when url
+      (list :hx-ext "sse" :sse-connect url))))
 
 (defun sse-swap (event &key target swap)
-  (declare (ignore event target swap))
-  (%h4h0-pending 'sse-swap))
+  (append (list :sse-swap (%event-name event))
+          (when target (list :hx-target (%string-option :target target)))
+          (when swap (list :hx-swap (hx-swap-value swap)))))
 
 (defun sse-close (event)
-  (declare (ignore event))
-  (%h4h0-pending 'sse-close))
+  (list :sse-close (%event-name event)))
 
 (defun fragment-event (event tree &key id)
   "An sse-protocol event carrying TREE as an HTML fragment for sse-swap=EVENT."
-  (declare (ignore event tree id))
-  (%h4h0-pending 'fragment-event))
+  (%event-name event)
+  (when id (%event-name id))
+  (stack-sse:make-sse-event :event event :data (to-html tree) :id id))
