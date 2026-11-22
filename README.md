@@ -8,7 +8,8 @@ Live HTML canvases for [cl-stack](https://github.com/egao1980/cl-stack) (H4h). A
 | htmx | `hx-get` / `hx-post` plists, `canvas-link` / `canvas-url` through a resolver GF, `htmx-response-headers` as data, `sse-connect` / `sse-swap` / `fragment-event` |
 | Output | classless semantic HTML (closed `data-*` vocabulary), CSP-ready for `script-src 'self'` (no inline scripts, no `on*`, no `style=`), `csp-violations` scan |
 | Assets | vendored **htmx 2.0.11** + **htmx-ext-sse 2.2.4** (0BSD, checksums in `assets/SHA256SUMS`), placeholder classless stylesheet (engels later) |
-| Charts | backend-neutral chart model + `render-chart` GF (SVG backend: [canvas-backend-svg](https://github.com/egao1980/canvas-backend-svg)) |
+| Charts | backend-neutral chart model + `render-chart` GF (SVG backend: [canvas-backend-svg](https://github.com/egao1980/canvas-backend-svg)). Marks are `currentColor` with `data-series="1".."8"`; `chart-stylesheet` / `chart-css` (built with css-protocol) map them to Okabe–Ito `--chart-1..8`, light and dark, and the placeholder theme ends with `(chart-css)` |
+| SVG names | camelCase SVG names (`viewBox`, `preserveAspectRatio`, `linearGradient`, ...) keep their case through `el`, `render`, `neutralize` and `freeze` (html-protocol 0.1.2 `canonical-*-name`) |
 
 Servers live elsewhere: [rpc-backend-htmx](https://github.com/egao1980/rpc-backend-htmx) (htmx as an rpc-protocol transport) and the cl-stack-code web view.
 

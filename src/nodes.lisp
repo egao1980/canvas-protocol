@@ -5,9 +5,12 @@
 ;;;
 ;;; Rules (H4h-0, see cl-stack/docs/capabilities/canvas.md):
 ;;; - EL tag: keyword or string, lowercased, [a-z][a-z0-9-]*; else CANVAS-ERROR.
+;;;   Stored as STACK-HTML:CANONICAL-ELEMENT-NAME (SVG camelCase tags such as
+;;;   :lineargradient -> "linearGradient").
 ;;;   Refused tags (CANVAS-CSP-ERROR): script iframe object embed.
 ;;; - EL attrs: a plist. Name = lowercased symbol name, [a-z][a-z0-9:._-]*, else
-;;;   CANVAS-ERROR; an odd plist is a CANVAS-ERROR. Value: string as is, integer
+;;;   CANVAS-ERROR, stored as STACK-HTML:CANONICAL-ATTRIBUTE-NAME (SVG camelCase
+;;;   names such as :viewbox -> "viewBox"; every CSP check folds case); an odd plist is a CANVAS-ERROR. Value: string as is, integer
 ;;;   decimal, T -> "" (boolean attribute), NIL -> attribute omitted; anything
 ;;;   else CANVAS-ERROR. Output order = the order given (html-protocol 0.1.1
 ;;;   guarantees attributes print in list order on every implementation).
@@ -89,8 +92,9 @@
   (and (stringp value) (%prefix-p "javascript:" (%url-scheme-text value))))
 
 (defun %attribute-violation (name value)
-  "CSP violation KIND of the attribute NAME (lowercased) with string VALUE, or NIL."
-  (let ((value (if (stringp value) value (princ-to-string value))))
+  "CSP violation KIND of the attribute NAME (any case) with string VALUE, or NIL."
+  (let ((name (string-downcase name))
+        (value (if (stringp value) value (princ-to-string value))))
     (cond ((or (%prefix-p "hx-on" name) (%prefix-p "data-hx-on" name)) :hx-on)
           ((%prefix-p "on" name) :event-handler)
           ((string= name "style") :inline-style)
@@ -136,14 +140,14 @@
     (cond ((string= name "script") (%csp-error :inline-script name nil))
           ((member name '("iframe" "object" "embed") :test #'string=)
            (%csp-error :embed name nil)))
-    name))
+    (stack-html:canonical-element-name name)))
 
 (defun %attr-name (key)
   (let ((name (and key (symbolp key) (string-downcase (symbol-name key)))))
     (unless (%token-p name #'%ascii-lower-p
                       (lambda (c) (or (%ascii-lower-p c) (%ascii-digit-p c) (find c ":._-"))))
       (%canvas-error "invalid attribute name ~S" key))
-    name))
+    (stack-html:canonical-attribute-name name)))
 
 (defun %attr-value (name value)
   (cond ((stringp value) value)

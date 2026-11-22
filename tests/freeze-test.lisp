@@ -58,7 +58,7 @@
 (deftest freeze-keeps-chart-svg
   (let ((*chart-backend* (make-instance 'test-chart-backend)))
     (let ((out (freeze 'chart-canvas)))
-      (ok (contains "<svg role=\"img\" viewbox=\"0 0 10 10\"><title>Speed</title></svg>" out)))))
+      (ok (contains "<svg role=\"img\" viewBox=\"0 0 10 10\"><title>Speed</title></svg>" out)))))
 
 (deftest freeze-refuses
   (ok (signals (freeze 'no-such-canvas-function-xyz) 'canvas-error))
