@@ -86,7 +86,7 @@
 (deftest chart-node-with-backends
   (let ((chart (make-chart :line :series (line-series) :title "T"))
         (b (make-instance 'test-chart-backend)))
-    (ok (string= "<svg role=\"img\" viewbox=\"0 0 10 10\"><title>T</title></svg>"
+    (ok (string= "<svg role=\"img\" viewBox=\"0 0 10 10\"><title>T</title></svg>"
                  (to-html (chart-node chart :backend b))))
     (ok (eq chart (first (backend-seen b))))
     (let ((*chart-backend* b))

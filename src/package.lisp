@@ -53,6 +53,8 @@
    #:axis #:make-axis #:axis-label #:axis-scale #:axis-min #:axis-max
    #:axis-ticks #:axis-format
    #:validate-chart #:chart-backend #:*chart-backend* #:render-chart #:chart-node
-   #:*chart-palette* #:+chart-kinds+ #:+axis-scales+))
+   #:*chart-palette* #:+chart-kinds+ #:+axis-scales+
+   ;; theme.lisp
+   #:*chart-palette-dark* #:chart-stylesheet #:chart-css))
 
 (in-package #:canvas-protocol)

@@ -70,8 +70,9 @@
                    ((stack-html:html-element-p node)
                     (multiple-value-bind (keep attributes) (funcall element-filter node)
                       (when keep
+                        ;; MAKE-HTML-ELEMENT canonicalises the name (SVG camelCase kept).
                         (stack-html:make-html-element
-                         (%node-name (stack-html:html-element-name node))
+                         (stack-html:html-element-name node)
                          :attributes attributes
                          :children (copy (stack-html:html-element-children node))))))
                    ((stack-html:html-text-p node) (%text (stack-html:html-text-data node)))
@@ -86,9 +87,13 @@
     (copy tree)))
 
 (defun %attribute-pairs (element)
-  "ELEMENT's attributes as fresh (lowercased-name . string) pairs."
+  "ELEMENT's attributes as fresh (name . string) pairs, NAME as
+STACK-HTML:CANONICAL-ATTRIBUTE-NAME: lowercased, except SVG camelCase names
+(viewBox, preserveAspectRatio, ...), which keep their case. Every CSP and URL
+check folds case itself."
   (loop for (name . value) in (stack-html:html-element-attributes element)
-        collect (cons (%node-name name) (if (stringp value) value (princ-to-string value)))))
+        collect (cons (stack-html:canonical-attribute-name name)
+                      (if (stringp value) value (princ-to-string value)))))
 
 (defun csp-violations (tree)
   (let ((found '()))
@@ -134,13 +139,14 @@
               '("data:image/png" "data:image/jpeg" "data:image/gif" "data:image/webp")))))
 
 (defun %neutralized-attribute-p (name value)
-  (or (%prefix-p "hx-" name)
-      (%prefix-p "data-hx-" name)
-      (%prefix-p "sse-" name)
-      (%prefix-p "data-sse-" name)
-      (%attribute-violation name value)
-      (and (member name +neutralized-url-attributes+ :test #'string=)
-           (not (%offline-url-p value)))))
+  (let ((name (string-downcase name)))
+    (or (%prefix-p "hx-" name)
+        (%prefix-p "data-hx-" name)
+        (%prefix-p "sse-" name)
+        (%prefix-p "data-sse-" name)
+        (%attribute-violation name value)
+        (and (member name +neutralized-url-attributes+ :test #'string=)
+             (not (%offline-url-p value))))))
 
 (defun neutralize (tree)
   (%copy-tree (render tree)

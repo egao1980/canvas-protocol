@@ -1,9 +1,10 @@
 (defsystem "canvas-protocol"
-  :version "0.1.0"
+  :version "0.1.1"
   :description "Live HTML canvases for cl-stack: components, htmx helpers, freeze, chart model (H4h)"
   :author "egao1980"
   :license "MIT"
-  :depends-on ((:version "html-protocol" "0.1.1")
+  :depends-on ((:version "html-protocol" "0.1.2")
+               (:version "css-protocol" "0.1.0")
                (:version "sse-protocol" "0.1.1")
                (:version "encoding-protocol" "0.2.0")
                (:version "json-protocol" "0.2.2")
@@ -29,7 +30,8 @@
                              (:file "forms")
                              (:file "assets")
                              (:file "page")
-                             (:file "chart"))))
+                             (:file "chart")
+                             (:file "theme"))))
   :in-order-to ((test-op (test-op "canvas-protocol/tests"))))
 
 (defsystem "canvas-protocol/tests"
@@ -50,7 +52,8 @@
                (:file "csp-test")
                (:file "freeze-test")
                (:file "assets-test")
-               (:file "chart-test"))
+               (:file "chart-test")
+               (:file "theme-test"))
   :perform (test-op (o c)
              (unless (symbol-call :rove :run c)
                (error "tests failed for ~A" (component-name c)))))
