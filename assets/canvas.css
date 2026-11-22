@@ -1,0 +1,72 @@
+/* canvas-protocol placeholder theme (classless). Replaced by engels (H4h-0b).
+   Styles semantic elements plus the canvas data-* / aria-* vocabulary only. */
+:root {
+  color-scheme: light dark;
+  --fg: #1b1f24; --bg: #ffffff; --muted: #59636e; --line: #d1d9e0;
+  --stripe: #f6f8fa; --accent: #0969da; --ok: #1a7f37; --warn: #9a6700;
+  --error: #cf222e; --info: #0969da;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e6edf3; --bg: #0d1117; --muted: #9198a1; --line: #3d444d;
+    --stripe: #151b23; --accent: #4493f8; --ok: #3fb950; --warn: #d29922;
+    --error: #f85149; --info: #4493f8;
+  }
+}
+body { margin: 0 auto; max-width: 72rem; padding: 1rem; color: var(--fg); background: var(--bg);
+  font: 16px/1.5 system-ui, sans-serif; }
+pre, code { font-family: ui-monospace, monospace; font-size: 0.9em; }
+pre { overflow-x: auto; padding: 0.75rem; background: var(--stripe); border: 1px solid var(--line); }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+caption { text-align: left; font-weight: 600; padding: 0.25rem 0; }
+th, td { padding: 0.375rem 0.625rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+thead th { border-bottom-width: 2px; }
+tbody tr:nth-child(even) { background: var(--stripe); }
+th button { all: unset; cursor: pointer; font-weight: 600; }
+th[aria-sort="ascending"] button::after { content: " \25B2"; }
+th[aria-sort="descending"] button::after { content: " \25BC"; }
+[data-align="start"] { text-align: left; }
+[data-align="center"] { text-align: center; }
+[data-align="end"] { text-align: right; }
+td em { color: var(--muted); }
+nav[aria-label="Pages"] { display: flex; gap: 0.75rem; align-items: center; padding: 0.5rem 0; }
+article { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0 1rem; margin: 0.5rem 0; }
+article > header h3 { margin: 0.75rem 0 0.25rem; }
+article > footer { color: var(--muted); padding-bottom: 0.75rem; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
+dt { font-weight: 600; }
+dd { margin: 0; }
+label { display: block; margin: 0.5rem 0; }
+input, select, textarea, button { font: inherit; }
+input:not([type="checkbox"]), select, textarea { display: block; width: 100%; max-width: 32rem; box-sizing: border-box;
+  padding: 0.375rem; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 0.25rem; }
+button { padding: 0.375rem 0.75rem; border: 1px solid var(--line); border-radius: 0.25rem; background: var(--stripe); color: var(--fg); }
+button[type="submit"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+button[disabled] { opacity: 0.5; }
+[aria-invalid="true"] { border-color: var(--error); }
+small[role="alert"] { display: block; color: var(--error); }
+[role="tablist"] { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--line); }
+[role="tab"][aria-selected="true"] { border-bottom: 2px solid var(--accent); font-weight: 600; }
+[role="tabpanel"] { padding: 0.75rem 0; }
+[data-layout] { display: flex; flex-direction: column; gap: 0.75rem; }
+[data-layout="row"] { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
+[data-layout="grid"] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+[data-columns="1"] { grid-template-columns: minmax(0, 1fr); }
+[data-columns="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+[data-columns="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+[data-columns="5"] { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+[data-columns="6"] { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+[data-gap="none"] { gap: 0; }
+[data-gap="s"] { gap: 0.25rem; }
+[data-gap="l"] { gap: 1.5rem; }
+[data-badge] { display: inline-block; padding: 0 0.5rem; border-radius: 1rem; font-size: 0.85em;
+  border: 1px solid currentColor; color: var(--muted); }
+[data-badge="info"] { color: var(--info); }
+[data-badge="ok"] { color: var(--ok); }
+[data-badge="warn"] { color: var(--warn); }
+[data-badge="error"] { color: var(--error); }
+figure[data-chart] { margin: 0.5rem 0; }
+figure[data-chart] svg { max-width: 100%; height: auto; }
+@media (max-width: 40rem) {
+  [data-layout="grid"] { grid-template-columns: minmax(0, 1fr); }
+}

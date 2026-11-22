@@ -1,7 +1,4 @@
 (defpackage #:canvas-protocol/tests
-  (:use #:cl #:rove))
+  (:use #:cl #:rove #:canvas-protocol))
 
 (in-package #:canvas-protocol/tests)
-
-(deftest package-exists
-  (ok (find-package :canvas-protocol)))
