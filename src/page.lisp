@@ -19,8 +19,8 @@
 ;;;
 ;;; +HTMX-CONFIG+ is an alist in output order in json-protocol's value mapping
 ;;; (T -> true, NIL -> false, integers). The meta content is
-;;; (stack-json:encode +htmx-config+); no JSON encoder of our own (key order:
-;;; egao1980/json-protocol#23).
+;;; (stack-json:encode +htmx-config+); no JSON encoder of our own
+;;; (json-protocol 0.2.2 guarantees alist key order, nested alists included).
 ;;;
 ;;; CSP-VIOLATIONS tree -> list, in document order (TREE is RENDERed first; a
 ;;; document is scanned whole), of

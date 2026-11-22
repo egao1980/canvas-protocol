@@ -3,11 +3,11 @@
   :description "Live HTML canvases for cl-stack: components, htmx helpers, freeze, chart model (H4h)"
   :author "egao1980"
   :license "MIT"
-  :depends-on ((:version "html-protocol" "0.1.0")
+  :depends-on ((:version "html-protocol" "0.1.1")
                (:version "sse-protocol" "0.1.1")
                (:version "encoding-protocol" "0.2.0")
-               (:version "json-protocol" "0.2.1")
-               (:version "json-backend-jzon" "0.2.1"))
+               (:version "json-protocol" "0.2.2")
+               (:version "json-backend-jzon" "0.2.2"))
   :serial t
   :components ((:module "assets"
                 :components ((:static-file "htmx.min.js")

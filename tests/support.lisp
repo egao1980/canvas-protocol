@@ -33,7 +33,7 @@
 (defparameter +u+ "/t/CANVAS-PROTOCOL/TESTS::"
   "URL prefix the fake resolver gives canvases in this package.")
 
-;;; Raw html-protocol nodes (attributes are an alist; html-protocol prints it reversed).
+;;; Raw html-protocol nodes (attributes are an alist; html-protocol 0.1.1 prints it in list order).
 
 (defun raw (tag attrs &rest children)
   (stack-html:make-html-element

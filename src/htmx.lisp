@@ -17,7 +17,7 @@
 ;;;   (name . string), then (stack-json:encode alist): json-protocol under the
 ;;;   current *JSON-BACKEND* (json-backend-jzon, a dependency, is the default).
 ;;;   No JSON encoder of our own. Determinism comes from json-protocol: an
-;;;   alist encodes in alist order (egao1980/json-protocol#23), compact output.
+;;;   alist encodes in alist order (json-protocol 0.2.2 guarantees it), compact.
 ;;;   An empty normalized alist -> :hx-vals omitted. The string is not
 ;;;   HTML-safe by itself ("<" stays raw): html-protocol escapes attribute values.
 ;;; - PUSH-URL: T -> "true", a string as is.

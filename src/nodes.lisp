@@ -9,8 +9,8 @@
 ;;; - EL attrs: a plist. Name = lowercased symbol name, [a-z][a-z0-9:._-]*, else
 ;;;   CANVAS-ERROR; an odd plist is a CANVAS-ERROR. Value: string as is, integer
 ;;;   decimal, T -> "" (boolean attribute), NIL -> attribute omitted; anything
-;;;   else CANVAS-ERROR. Output order = the order given (html-protocol's writer
-;;;   prints its attribute list reversed; account for that).
+;;;   else CANVAS-ERROR. Output order = the order given (html-protocol 0.1.1
+;;;   guarantees attributes print in list order on every implementation).
 ;;;   Refused (CANVAS-CSP-ERROR): names starting "on", "hx-on", "data-hx-on";
 ;;;   "style"; "hx-vars"; an "hx-vals" value starting "js:"; an "hx-trigger"
 ;;;   containing "["; a URL attribute (href src action formaction hx-get hx-post
@@ -25,8 +25,8 @@
 ;;;   <figcaption>title</figcaption></figure>). Any other object -> CANVAS-ERROR.
 ;;; - TO-HTML: string of the rendered object. An html-document serializes with
 ;;;   its doctype. Text is always escaped, including text at the top level of a
-;;;   fragment (html-protocol 0.1.0 writes document-level text raw:
-;;;   https://github.com/egao1980/html-protocol/issues/3).
+;;;   fragment: html-protocol 0.1.1 guarantees every text node is escaped and
+;;;   attribute values escape &, " and <, so TO-HTML escapes nothing by hand.
 
 (defgeneric render (object)
   (:documentation "OBJECT -> an html-protocol node, a list of nodes, or NIL."))
