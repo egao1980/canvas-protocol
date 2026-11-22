@@ -17,8 +17,10 @@
 ;;; any CSP-VIOLATIONS -> CANVAS-CSP-ERROR (violations) with restart
 ;;; STRIP-VIOLATIONS (remove offending elements / attributes and go on).
 ;;;
-;;; +HTMX-CONFIG+ is an alist in output order; JSON: keys quoted, T -> true,
-;;; :false -> false, integers decimal; no spaces.
+;;; +HTMX-CONFIG+ is an alist in output order in json-protocol's value mapping
+;;; (T -> true, NIL -> false, integers). The meta content is
+;;; (stack-json:encode +htmx-config+); no JSON encoder of our own (key order:
+;;; egao1980/json-protocol#23).
 ;;;
 ;;; CSP-VIOLATIONS tree -> list, in document order (TREE is RENDERed first; a
 ;;; document is scanned whole), of
@@ -47,10 +49,10 @@
 ;;; Byte-deterministic for the same function, args and image state.
 
 (defparameter +htmx-config+
-  '(("allowEval" . :false)
-    ("allowScriptTags" . :false)
+  '(("allowEval" . nil)
+    ("allowScriptTags" . nil)
     ("historyCacheSize" . 0)
-    ("includeIndicatorStyles" . :false)
+    ("includeIndicatorStyles" . nil)
     ("refreshOnHistoryMiss" . t)
     ("selfRequestsOnly" . t))
   "htmx.config for CSP (no eval, no inline styles) and privacy (no history snapshots).")

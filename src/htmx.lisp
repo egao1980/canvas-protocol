@@ -13,9 +13,13 @@
 ;;;   space-separated token is one of their values (modifiers follow);
 ;;;   else CANVAS-ERROR.
 ;;; - TRIGGER: a string; "[" (an eval'd filter) -> CANVAS-CSP-ERROR; CR/LF -> CANVAS-ERROR.
-;;; - VALS: a param plist (normalized as in resolver.lisp) -> a JSON object
-;;;   string, keys in order, values strings; in strings escape " \ and
-;;;   U+0000-U+001F (\n \r \t short forms, others \u00XX) and "<" as <.
+;;; - VALS: a param plist, normalized as in resolver.lisp to an alist
+;;;   (name . string), then (stack-json:encode alist): json-protocol under the
+;;;   current *JSON-BACKEND* (json-backend-jzon, a dependency, is the default).
+;;;   No JSON encoder of our own. Determinism comes from json-protocol: an
+;;;   alist encodes in alist order (egao1980/json-protocol#23), compact output.
+;;;   An empty normalized alist -> :hx-vals omitted. The string is not
+;;;   HTML-safe by itself ("<" stays raw): html-protocol escapes attribute values.
 ;;; - PUSH-URL: T -> "true", a string as is.
 ;;;
 ;;; HTMX-RESPONSE-HEADERS -> alist ("HX-..." . string) sorted by header name
@@ -25,7 +29,8 @@
 ;;; :retarget HX-Retarget, :trigger HX-Trigger, :trigger-after-settle
 ;;; HX-Trigger-After-Settle, :trigger-after-swap HX-Trigger-After-Swap.
 ;;; Trigger values: an event name; a list of names -> "a, b"; a plist
-;;; (:event "detail" ...) -> JSON object (VALS encoding). Event names follow the
+;;; (:event "detail" ...) -> JSON object, encoded as VALS (stack-json:encode of
+;;; the alist; details must be strings, else CANVAS-ERROR). Event names follow the
 ;;; SSE rule below. CR or LF in any value -> CANVAS-ERROR. NIL args omitted.
 ;;;
 ;;; SSE: event names (and FRAGMENT-EVENT ids) match [A-Za-z0-9_.:-]+, else CANVAS-ERROR.

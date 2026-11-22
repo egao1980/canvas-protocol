@@ -53,4 +53,9 @@
   (ok (equal '("allowEval" "allowScriptTags" "historyCacheSize" "includeIndicatorStyles"
                "refreshOnHistoryMiss" "selfRequestsOnly")
              (mapcar #'car +htmx-config+)))
-  (ok (eq :false (cdr (assoc "allowEval" +htmx-config+ :test #'string=)))))
+  (ok (stack-json:false-p (cdr (assoc "allowEval" +htmx-config+ :test #'string=))))
+  ;; The meta content is json-protocol's encoding of the constant (no private encoder).
+  (ok (string= (s+ "{\"allowEval\":false,\"allowScriptTags\":false,"
+                   "\"historyCacheSize\":0,\"includeIndicatorStyles\":false,"
+                   "\"refreshOnHistoryMiss\":true,\"selfRequestsOnly\":true}")
+               (stack-json:encode +htmx-config+))))

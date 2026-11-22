@@ -74,14 +74,26 @@
     (ok (equal (list :hx-post (s+ +u+ "SAVE") :hx-push-url "/next")
                (hx-post (canvas-link 'save) :push-url "/next")))))
 
+(defparameter +vals-json+
+  (format nil "{\"a\":\"1\",\"b\":\"x\\\"y\\\\z<\",\"n\":\"2\",\"nl\":\"a\\nb\"}")
+  "json-protocol's (default backend) bytes for the normalized :vals below.")
+
 (deftest hx-vals-json
+  ;; The expectation is json-protocol's own output: no private encoder.
+  (ok (string= +vals-json+
+               (stack-json:encode (list (cons "a" "1") (cons "b" "x\"y\\z<") (cons "n" "2")
+                                        (cons "nl" (format nil "a~%b"))))))
+  (ok (string= "{\"c\":\"\\u0001\"}" (stack-json:encode (list (cons "c" (string (code-char 1)))))))
   (with-fake ()
-    (ok (string= (format nil "{\"a\":\"1\",\"b\":\"x\\\"y\\\\z\\u003c\",\"n\":\"2\",\"nl\":\"a\\nb\"}")
+    (ok (string= +vals-json+
                  (getf (hx-post (canvas-link 'save)
                                 :vals (list :a "1" :b "x\"y\\z<" :n 2 :nl (format nil "a~%b")))
                        :hx-vals)))
     (ok (string= "{\"c\":\"\\u0001\"}"
-                 (getf (hx-post (canvas-link 'save) :vals (list :c (string (code-char 1)))) :hx-vals)))))
+                 (getf (hx-post (canvas-link 'save) :vals (list :c (string (code-char 1)))) :hx-vals)))
+    (ok (equal (list :hx-post (s+ +u+ "SAVE")) (hx-post (canvas-link 'save) :vals '(:a nil))))
+    (ok (contains "hx-vals=\"{&quot;b&quot;:&quot;&lt;&quot;}\""
+                  (to-html (el :button (hx-post (canvas-link 'save) :vals '(:b "<")) "Go"))))))
 
 (deftest hx-swap-values
   (loop for (kw . str) in '((:inner-html . "innerHTML") (:outer-html . "outerHTML")
@@ -125,6 +137,9 @@
 
 (deftest response-headers-triggers
   (ok (equal '(("HX-Trigger" . "a, b")) (htmx-response-headers :trigger '("a" "b"))))
+  ;; Trigger detail JSON is json-protocol's output for the alist.
+  (ok (string= "{\"saved\":\"row \\\"3\\\"\",\"done\":\"\"}"
+               (stack-json:encode '(("saved" . "row \"3\"") ("done" . "")))))
   (ok (equal '(("HX-Trigger" . "{\"saved\":\"row \\\"3\\\"\",\"done\":\"\"}"))
              (htmx-response-headers :trigger '(:saved "row \"3\"" :done ""))))
   (ok (equal '(("HX-Reswap" . "outerHTML scroll:top"))

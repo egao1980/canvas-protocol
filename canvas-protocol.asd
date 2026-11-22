@@ -5,7 +5,9 @@
   :license "MIT"
   :depends-on ((:version "html-protocol" "0.1.0")
                (:version "sse-protocol" "0.1.1")
-               (:version "encoding-protocol" "0.2.0"))
+               (:version "encoding-protocol" "0.2.0")
+               (:version "json-protocol" "0.2.1")
+               (:version "json-backend-jzon" "0.2.1"))
   :serial t
   :components ((:module "assets"
                 :components ((:static-file "htmx.min.js")
