@@ -41,6 +41,78 @@
 ;;; The plist holds every spec key in spec order; each coercion error is
 ;;; collected (in spec order) and USE-DEFAULT taken. FIND-FIELD-ERROR errors
 ;;; field -> the error for FIELD or NIL.
+;;;
+;;; ---- 0.2.0 (HX2): file uploads ----
+;;;
+;;; file-input   <label>L<input type="file" name="N" [accept="A"] [multiple=""]
+;;;              [required=""] [aria-invalid aria-describedby]></label>
+;;;   (file-input name &key label accept multiple required error id attrs).
+;;;   No value (browsers never let a page preset a file). ACCEPT: NIL, a
+;;;   string (split at "," into entries) or a list of strings (one entry
+;;;   each); every entry is trimmed of spaces and must be
+;;;     an extension  "." [A-Za-z0-9] [A-Za-z0-9._+-]*        (".svg", ".tar.gz")
+;;;     a media type  TYPE "/" SUBTYPE, TYPE a token, SUBTYPE a token or "*"
+;;;                   ("image/svg+xml", "image/*"); token = [A-Za-z0-9]
+;;;                   followed by [A-Za-z0-9!#$&^_.+-]*; no parameters
+;;;   else CANVAS-ERROR at construction (as is an empty list of entries).
+;;;   The attribute is the trimmed entries joined with "," in the given order,
+;;;   case kept. MULTIPLE: a generalized boolean.
+;;;
+;;; form: when the rendered children hold an <input> whose type attribute is
+;;;   "file" (any case) at any depth -- a FILE-INPUT or a raw node -- the form
+;;;   element gets enctype="multipart/form-data" after its hx attributes and
+;;;   before the caller's attrs (also when the link resolves to NIL). htmx
+;;;   2.0.11 sends a form with that enctype as multipart FormData (its
+;;;   usesFormData test), so no hx-encoding attribute is needed. Forms without
+;;;   a file input are unchanged.
+;;;
+;;; UPLOADED-FILE (a struct, read-only slots):
+;;;   FILENAME    the client's file name reduced to its last path segment (the
+;;;               text after the last "/" or "\"), control characters removed;
+;;;               NIL when that leaves nothing. Never used as a path here.
+;;;   MEDIA-TYPE  lowercase "type/subtype" without parameters
+;;;               (STACK-MIME:MEDIA-TYPE-ESSENTIALS of the part's Content-Type),
+;;;               "application/octet-stream" when the part has none.
+;;;   SIZE        octets, a non-negative integer.
+;;;   OCTETS      the content as a (simple-array (unsigned-byte 8) (*)), or NIL
+;;;               when PATH holds it.
+;;;   PATH        a pathname of a server-spooled copy, or NIL. canvas-protocol
+;;;               never writes files; a codec that spools large parts sets it.
+;;;
+;;; COERCE-PARAM value :file &key field default required max-size accept multiple
+;;; (MIN MAX CHOICES are ignored for :file; MAX-SIZE ACCEPT MULTIPLE are ignored
+;;; for the other types.)
+;;; - VALUE items: NIL; a string; a STACK-MIME:MIME-ENTITY (a multipart part,
+;;;   as mime-protocol's PARSE-MIME returns it); an UPLOADED-FILE. Any other
+;;;   object -> CANVAS-ERROR (a server bug, not user input).
+;;; - Missing: NIL, "", or a part whose disposition filename is "" (what a
+;;;   browser sends for a file input left empty). Missing -> REQUIRED: error
+;;;   :required, else DEFAULT.
+;;; - A non-empty string, or a part without a filename parameter (a plain text
+;;;   field) -> error :file. So does a list when MULTIPLE is NIL.
+;;; - A part with a filename -> a fresh UPLOADED-FILE: FILENAME from
+;;;   STACK-MIME:DISPOSITION-FILENAME as above, MEDIA-TYPE, OCTETS = the part's
+;;;   decoded content (STACK-MIME:MIME-CONTENT; NIL -> empty), SIZE its length,
+;;;   PATH NIL. An UPLOADED-FILE is taken as it is (the same object).
+;;; - Then, in this order: MAX-SIZE (NIL or a non-negative integer, else
+;;;   CANVAS-ERROR) -> SIZE above it signals CANVAS-UPLOAD-TOO-LARGE
+;;;   (expected :max-size, detail MAX-SIZE, size SIZE); ACCEPT (the FILE-INPUT
+;;;   entry rules; invalid -> CANVAS-ERROR before VALUE is looked at) -> no
+;;;   entry matches: error :accept, detail the entry strings. An entry ".ext"
+;;;   matches a FILENAME ending in it (case-insensitive; a NIL filename matches
+;;;   no extension); "type/*" matches a MEDIA-TYPE of that type; "type/sub"
+;;;   matches it exactly (case-insensitive).
+;;; - MULTIPLE NIL -> the UPLOADED-FILE. MULTIPLE true -> VALUE is one item or
+;;;   a list of items; missing items are dropped; none left is missing (as
+;;;   above); otherwise a list of UPLOADED-FILEs in the given order, each
+;;;   checked in turn; the first failure is signalled with :value that item.
+;;; - Errors are CANVAS-COERCION-ERRORs signalled with ERROR inside the
+;;;   restarts USE-VALUE (v) -> v and USE-DEFAULT () -> DEFAULT, for the whole
+;;;   field, exactly like the other types; FIELD names the field in the text
+;;;   ("photo must be at most 1048576 bytes"). COERCE-FORM and ERROR-FRAGMENT
+;;;   work unchanged, so an upload error renders next to its FILE-INPUT.
+;;; The request body limit stays the server's (rpc-backend-htmx's
+;;; :max-body-bytes, 413); MAX-SIZE is the per-field limit on top of it.
 
 (defclass input-component (component)
   ((name :initarg :name :reader input-name)
@@ -95,6 +167,24 @@
   (%make 'textarea :name name :label label :value value :rows rows :placeholder placeholder
                    :required required :error error :id id :attrs attrs))
 
+(defclass file-input (input-component)
+  ((accept :initarg :accept :initform nil :reader input-accept)
+   (multiple :initarg :multiple :initform nil :reader input-multiple-p)))
+
+(defun file-input (name &key label accept multiple required error id attrs)
+  (%make 'file-input :name name :label label :accept accept :multiple multiple
+                     :required required :error error :id id :attrs attrs))
+
+(defstruct (uploaded-file (:constructor make-uploaded-file
+                              (&key filename (media-type "application/octet-stream")
+                                    (size 0) octets path)))
+  "One uploaded file. See the file header."
+  (filename nil :type (or null string) :read-only t)
+  (media-type "application/octet-stream" :type string :read-only t)
+  (size 0 :type (integer 0) :read-only t)
+  (octets nil :type (or null (simple-array (unsigned-byte 8) (*))) :read-only t)
+  (path nil :type (or null pathname) :read-only t))
+
 (defclass submit-button (component)
   ((label :initarg :label :reader submit-label)
    (name :initarg :name :initform nil :reader submit-name)
@@ -137,6 +227,16 @@
                  (every (lambda (o) (stringp (%option-value o))) options))
       (%canvas-error "select options must be strings or (value . label) conses: ~S" options)))
   (call-next-method))
+
+(defun %accept-entries (accept)
+  "ACCEPT (NIL, a string or a list of strings) -> the list of trimmed entries,
+validated; invalid -> CANVAS-ERROR. See the file header."
+  (declare (ignorable accept))
+  (%hx2-pending 'accept-entries))
+
+(defmethod validate-component ((c file-input))
+  (declare (ignorable c))
+  (%hx2-pending 'file-input))
 
 (defmethod validate-component ((c submit-button))
   (when (submit-name c) (%check-field-name (submit-name c)))
@@ -220,10 +320,16 @@
                                              :placeholder (input-placeholder c))
                    (input-value c))))
 
+(defmethod render ((c file-input))
+  (declare (ignorable c))
+  (%hx2-pending 'file-input))
+
 (defmethod render ((c submit-button))
   (el :button (%own c :type "submit" :name (submit-name c) :value (submit-value c))
       (submit-label c)))
 
+;; HX2: the enctype rule of the file header (multipart when a file input is
+;; inside) is to be added here.
 (defmethod render ((c form))
   (let* ((id (component-id c))
          (target (form-target c))
@@ -329,10 +435,20 @@
      (let ((v (find trimmed (mapcar #'%option-value choices) :test #'string=)))
        (values v (and v t))))))
 
-(defun coerce-param (value type &key (field "value") default required min max choices)
+(defun %coerce-upload (value &key field default required max-size accept multiple)
+  "COERCE-PARAM for :file. See the file header."
+  (declare (ignorable value field default required max-size accept multiple))
+  (%hx2-pending 'coerce-upload))
+
+(defun coerce-param (value type &key (field "value") default required min max choices
+                                     max-size accept multiple)
   "Coerce the request string VALUE to TYPE. See the file header."
   (unless (member type +coercion-types+)
     (%canvas-error "unknown coercion type ~S (one of ~S)" type +coercion-types+))
+  (when (eq type :file)
+    (return-from coerce-param
+      (%coerce-upload value :field field :default default :required required
+                            :max-size max-size :accept accept :multiple multiple)))
   (unless (or (null value) (stringp value))
     (%canvas-error "~A: a request value must be a string or NIL, not ~S" field value))
   (when (eq type :choice)

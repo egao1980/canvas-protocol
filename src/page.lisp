@@ -17,6 +17,16 @@
 ;;; any CSP-VIOLATIONS -> CANVAS-CSP-ERROR (violations) with restart
 ;;; STRIP-VIOLATIONS (remove offending elements / attributes and go on).
 ;;;
+;;; 0.2.0 (HX2): PAGE &key (keys nil). KEYS T adds
+;;;   <script src="(resolve-asset-url r "canvas-keys.js")"></script>
+;;; right after the SSE extension's script (so the head ends with the three
+;;; scripts htmx, htmx-ext-sse, canvas-keys). KEYS T with HTMX NIL ->
+;;; CANVAS-ERROR (the bindings only make htmx requests); KEYS other than T or
+;;; NIL -> CANVAS-ERROR. KEYS NIL leaves the document exactly as in 0.1.
+;;; Decision: opt-in, not detected from BODY, because key-bound elements often
+;;; arrive later in swapped fragments; an element bound without the script
+;;; sends nothing (no "canvas:key" event), so forgetting it fails safe.
+;;;
 ;;; +HTMX-CONFIG+ is an alist in output order in json-protocol's value mapping
 ;;; (T -> true, NIL -> false, integers). The meta content is
 ;;; (stack-json:encode +htmx-config+); no JSON encoder of our own
@@ -36,6 +46,8 @@
 ;;; hx-* / data-hx-* / sse-* attributes; <script> <link> <iframe> <object>
 ;;; <embed> <style> elements; on* and style attributes; src href action
 ;;; formaction srcset poster xlink:href values unless they start "#" or "data:".
+;;; 0.2.0 (HX2): also without data-canvas-keys attributes (a frozen file loads
+;;; no script, so the bindings are dead weight).
 ;;;
 ;;; FREEZE fn &key args title -> string. FN an fbound symbol or a function
 ;;; (else CANVAS-ERROR); ARGS a plist (odd -> CANVAS-ERROR). Calls FN with ARGS
@@ -189,8 +201,15 @@ check folds case itself."
         (%element "meta" '(("name" . "viewport")
                            ("content" . "width=device-width, initial-scale=1")))))
 
-(defun page (body &key (title "canvas") (lang "en") (stylesheet :link) (htmx t))
-  (let ((resolver (%resolver)))
+(defun %keys-script (keys htmx)
+  "PAGE's KEYS option -> the list of extra asset names after the SSE script.
+See the file header."
+  (declare (ignorable keys htmx))
+  (%hx2-pending 'page-keys))
+
+(defun page (body &key (title "canvas") (lang "en") (stylesheet :link) (htmx t) keys)
+  (let ((resolver (%resolver))
+        (extra-scripts (and keys (%keys-script keys htmx))))
     (unless (member stylesheet '(:link :inline nil))
       (%canvas-error "stylesheet must be :link, :inline or NIL, not ~S" stylesheet))
     (let* ((nodes (%nodes (render body)))
@@ -221,7 +240,8 @@ check folds case itself."
                  (when (eq stylesheet :inline)
                    (list (%style-element)))
                  (when htmx
-                   (loop for name in '("htmx.min.js" "htmx-ext-sse.min.js")
+                   (loop for name in (append '("htmx.min.js" "htmx-ext-sse.min.js")
+                                             extra-scripts)
                          append (asset-element name
                                                (lambda (url)
                                                  (%element "script" (list (cons "src" url))))))))

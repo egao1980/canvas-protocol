@@ -1,6 +1,6 @@
 (defsystem "canvas-protocol"
-  :version "0.1.1"
-  :description "Live HTML canvases for cl-stack: components, htmx helpers, freeze, chart model (H4h)"
+  :version "0.2.0"
+  :description "Live HTML canvases for cl-stack: components, htmx helpers, freeze, chart model, engine SVG, uploads (H4h)"
   :author "egao1980"
   :license "MIT"
   :depends-on ((:version "html-protocol" "0.1.2")
@@ -8,11 +8,15 @@
                (:version "sse-protocol" "0.1.1")
                (:version "encoding-protocol" "0.2.0")
                (:version "json-protocol" "0.2.2")
-               (:version "json-backend-jzon" "0.2.2"))
+               (:version "json-backend-jzon" "0.2.2")
+               (:version "xml-protocol" "0.1.0")
+               (:version "xml-backend-native" "0.1.0")
+               (:version "mime-protocol" "0.2.0"))
   :serial t
   :components ((:module "assets"
                 :components ((:static-file "htmx.min.js")
                              (:static-file "htmx-ext-sse.min.js")
+                             (:static-file "canvas-keys.js")
                              (:static-file "canvas.css")
                              (:static-file "SHA256SUMS")
                              (:static-file "LICENSE.htmx")
@@ -31,7 +35,8 @@
                              (:file "assets")
                              (:file "page")
                              (:file "chart")
-                             (:file "theme"))))
+                             (:file "theme")
+                             (:file "svg"))))
   :in-order-to ((test-op (test-op "canvas-protocol/tests"))))
 
 (defsystem "canvas-protocol/tests"
@@ -53,7 +58,10 @@
                (:file "freeze-test")
                (:file "assets-test")
                (:file "chart-test")
-               (:file "theme-test"))
+               (:file "theme-test")
+               (:file "hx-attributes-test")
+               (:file "svg-test")
+               (:file "upload-test"))
   :perform (test-op (o c)
              (unless (symbol-call :rove :run c)
                (error "tests failed for ~A" (component-name c)))))

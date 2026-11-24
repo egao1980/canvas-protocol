@@ -14,6 +14,9 @@
 ;;; THEME-STYLESHEET theme -> octets; method (eql :placeholder) = assets/canvas.css;
 ;;;   an unknown theme -> CANVAS-ERROR. H4h-0b adds (eql :engels) and makes it the default.
 ;;; CANVAS-STYLESHEET -> (THEME-STYLESHEET *CANVAS-THEME*) decoded as UTF-8.
+;;; 0.2.0 (HX2) adds "canvas-keys.js" (first-party, MIT): the keyboard
+;;; bindings behind HX-GET / HX-POST :keys, loaded by (PAGE body :keys t).
+;;; Given with the contract, like canvas.css; its rules are in its header.
 
 (defparameter +htmx-version+ "2.0.11")
 (defparameter +htmx-sse-version+ "2.2.4")
@@ -22,7 +25,12 @@
   "Theme served as canvas.css and inlined by FREEZE.")
 
 (defparameter *asset-table*
-  `(("canvas.css"
+  `(("canvas-keys.js"
+     :file "canvas-keys.js" :version nil :license "MIT" :license-file nil
+     :source "canvas-protocol keyboard bindings (0.2.0): data-canvas-keys -> canvas:key events"
+     :integrity nil
+     :content-type "text/javascript; charset=utf-8")
+    ("canvas.css"
      :file "canvas.css" :version nil :license "MIT" :license-file nil
      :source "canvas-protocol placeholder theme"
      :integrity nil
