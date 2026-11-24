@@ -58,8 +58,8 @@ STACK-MIME:PARSE-MIME)."
 
 (defun empty-file-part ()
   "What a browser sends for a file input left empty: filename=\"\", no content.
-Built with mime-protocol rather than parsed: mime-protocol 0.2.0 cannot split a
-part whose content is empty or ends in CR LF (see the PR)."
+Built with mime-protocol rather than parsed: mime-protocol before 0.3.0 could
+not split a part whose content is empty or ends in CR LF (mime-protocol#9)."
   (file-part "" (octets)))
 
 (defun file-part (filename octets &key (type "application") (subtype "octet-stream"))
@@ -161,6 +161,38 @@ part whose content is empty or ends in CR LF (see the PR)."
     ;; The parsed SVG upload goes straight into SVG-FRAGMENT.
     (ok (string= "<svg><g id=\"a\"></g></svg>"
                  (to-html (svg-fragment (uploaded-file-octets score)))))))
+
+(defun utf-8-octets (string)
+  (stack-encoding:encode-to-octets string :encoding :utf-8))
+
+(defparameter +utf-8-filename+ "Ünïcödé — 楽譜.svg")
+
+(deftest coerce-file-browser-names
+  ;; 0.2.1, mime-protocol >= 0.3.1 (mime-protocol#14): a browser writes a
+  ;; filename as raw UTF-8 in a quoted string, a backslash as itself, and
+  ;; percent-encodes only " CR LF. mime-protocol 0.3.0 read the header as
+  ;; ISO-8859-1 and took a backslash as an escape, so "C:\fakepath\x" lost
+  ;; its path segments. The parsed parts are not re-printed (mime-protocol#16).
+  (let* ((body (cat-octets
+                "Content-Type: multipart/form-data; boundary=XyZzY" +crlf+ +crlf+
+                "--XyZzY" +crlf+
+                (utf-8-octets (format nil "Content-Disposition: form-data; name=\"score\"; filename=\"~A\""
+                                      +utf-8-filename+))
+                +crlf+ "Content-Type: image/svg+xml" +crlf+ +crlf+ +svg-upload+ +crlf+
+                "--XyZzY" +crlf+
+                (utf-8-octets "Content-Disposition: form-data; name=\"cover\"; filename=\"C:\\fakepath\\cöver %22a%22.png\"")
+                +crlf+ "Content-Type: image/png" +crlf+ +crlf+ +png-upload+ +crlf+
+                "--XyZzY--" +crlf+))
+         (parts (stack-mime:mime-parts (stack-mime:parse-mime body)))
+         (score (coerce-param (first parts) :file :field "score" :accept ".svg"))
+         (cover (coerce-param (second parts) :file :field "cover" :accept "image/*")))
+    (ok (string= +utf-8-filename+ (uploaded-file-filename score)) "a raw UTF-8 filename")
+    (ok (string= "image/svg+xml" (uploaded-file-media-type score)))
+    (ok (equalp (ascii-octets +svg-upload+) (uploaded-file-octets score)))
+    (ok (string= "cöver \"a\".png" (uploaded-file-filename cover))
+        "the last segment after literal backslashes; %22 is a quote")
+    (ok (string= "image/png" (uploaded-file-media-type cover)))
+    (ok (equalp +png-upload+ (uploaded-file-octets cover)) "binary content intact")))
 
 (deftest coerce-file-names-and-types
   (flet ((name-of (filename)

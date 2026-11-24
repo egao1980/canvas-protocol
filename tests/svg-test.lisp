@@ -209,8 +209,23 @@
       "CDATA becomes escaped text"))
 
 (deftest svg-control-characters
+  ;; xml-backend-native >= 0.1.1 refuses a character reference to a control
+  ;; character other than tab, LF and CR (XML 1.0 Legal Character): a parse
+  ;; error, not wrapped. A tree built with xml-protocol can still hold such
+  ;; characters, and they are removed.
+  (ok (signals (svg-fragment (svg* "<g id=\"x&#7;y\"/>")) 'stack-xml:xml-well-formed-error))
+  (ok (signals (svg-fragment (svg* "<text>a&#1;b</text>")) 'stack-xml:xml-well-formed-error))
   (ok (string= (format nil "<svg><g id=\"xy\"><text>ab~Cc~%d</text></g></svg>" #\Tab)
-               (svg-html (svg* "<g id=\"x&#7;y\"><text>a&#1;b&#9;c&#10;d</text></g>")))))
+               (svg-html (svg* "<g id=\"xy\"><text>ab&#9;c&#10;d</text></g>")))
+      "tab and LF references are kept")
+  (ok (string= (format nil "<svg><g id=\"xy\"><text>ab~Cc~%d</text></g></svg>" #\Tab)
+               (svg-html (stack-xml:make-xml-element
+                          "svg" nil
+                          (stack-xml:make-xml-element
+                           "g" (list (cons "id" (format nil "x~Cy" (code-char 7))))
+                           (stack-xml:make-xml-element
+                            "text" nil (format nil "a~Cb~Cc~%d" (code-char 1) #\Tab))))))
+      "controls in a built tree are removed from values and text"))
 
 (deftest svg-attrs-option
   (ok (string= "<svg viewBox=\"0 0 10 10\" role=\"img\" aria-label=\"Bars 1-4\"></svg>"

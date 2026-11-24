@@ -70,6 +70,9 @@
 ;;;   FILENAME    the client's file name reduced to its last path segment (the
 ;;;               text after the last "/" or "\"), control characters removed;
 ;;;               NIL when that leaves nothing. Never used as a path here.
+;;;               mime-protocol >= 0.3.1 gives a browser's name as it was
+;;;               sent: raw UTF-8, backslashes kept, %22 %0D %0A as " CR LF
+;;;               (mime-protocol#14).
 ;;;   MEDIA-TYPE  lowercase "type/subtype" without parameters
 ;;;               (STACK-MIME:MEDIA-TYPE-ESSENTIALS of the part's Content-Type),
 ;;;               "application/octet-stream" when the part has none.
