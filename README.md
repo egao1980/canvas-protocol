@@ -10,6 +10,11 @@ Live HTML canvases for [cl-stack](https://github.com/egao1980/cl-stack) (H4h). A
 | Assets | vendored **htmx 2.0.11** + **htmx-ext-sse 2.2.4** (0BSD, checksums in `assets/SHA256SUMS`), placeholder classless stylesheet (engels later) |
 | Charts | backend-neutral chart model + `render-chart` GF (SVG backend: [canvas-backend-svg](https://github.com/egao1980/canvas-backend-svg)). Marks are `currentColor` with `data-series="1".."8"`; `chart-stylesheet` / `chart-css` (built with css-protocol) map them to Okabe–Ito `--chart-1..8`, light and dark, and the placeholder theme ends with `(chart-css)` |
 | SVG names | camelCase SVG names (`viewBox`, `preserveAspectRatio`, `linearGradient`, ...) keep their case through `el`, `render`, `neutralize` and `freeze` (html-protocol 0.1.2 `canonical-*-name`) |
+| Keys (0.2.0) | `hx-get` / `hx-post` `:keys '("ArrowUp" "Ctrl+z")` bind key chords without eval: `data-canvas-keys` + `hx-trigger="canvas:key"`, served by the same-origin `canvas-keys.js` (`(page body :keys t)`), the chord sent as parameter `key`. `[filter]` triggers stay refused (they need `unsafe-eval`); `:sync` / `hx-sync-value` queue keystrokes in order; `hx-swap-oob` updates several panels from one response |
+| Engine SVG (0.2.0) | `svg-fragment` parses third-party SVG text with xml-protocol (no external entities, nothing fetched) into an html-protocol tree through an allowlist: ids, camelCase names, `<use href="#…">` kept; scripts, `on*`, `foreignObject`, external `href`, non-fragment `url(`, htmx attributes signal `unsafe-svg` (restart `strip-violations`); `<style>` is dropped |
+| Uploads (0.2.0) | `file-input` (`accept`, `multiple`), forms with a file input get `enctype="multipart/form-data"`, `(coerce-param part :file :max-size n :accept "image/*")` -> `uploaded-file` (filename, media type, size, octets or path) with `canvas-upload-too-large` and the usual `use-value` / `use-default` restarts |
+
+0.2.0 (HX2: issues #6 and #7): the exact rules are in each `src/*.lisp` header, and the Rove suite under `tests/` checks them.
 
 Servers live elsewhere: [rpc-backend-htmx](https://github.com/egao1980/rpc-backend-htmx) (htmx as an rpc-protocol transport) and the cl-stack-code web view.
 

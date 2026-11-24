@@ -41,6 +41,78 @@
 ;;; The plist holds every spec key in spec order; each coercion error is
 ;;; collected (in spec order) and USE-DEFAULT taken. FIND-FIELD-ERROR errors
 ;;; field -> the error for FIELD or NIL.
+;;;
+;;; ---- 0.2.0 (HX2): file uploads ----
+;;;
+;;; file-input   <label>L<input type="file" name="N" [accept="A"] [multiple=""]
+;;;              [required=""] [aria-invalid aria-describedby]></label>
+;;;   (file-input name &key label accept multiple required error id attrs).
+;;;   No value (browsers never let a page preset a file). ACCEPT: NIL, a
+;;;   string (split at "," into entries) or a list of strings (one entry
+;;;   each); every entry is trimmed of spaces and must be
+;;;     an extension  "." [A-Za-z0-9] [A-Za-z0-9._+-]*        (".svg", ".tar.gz")
+;;;     a media type  TYPE "/" SUBTYPE, TYPE a token, SUBTYPE a token or "*"
+;;;                   ("image/svg+xml", "image/*"); token = [A-Za-z0-9]
+;;;                   followed by [A-Za-z0-9!#$&^_.+-]*; no parameters
+;;;   else CANVAS-ERROR at construction (as is an empty list of entries).
+;;;   The attribute is the trimmed entries joined with "," in the given order,
+;;;   case kept. MULTIPLE: a generalized boolean.
+;;;
+;;; form: when the rendered children hold an <input> whose type attribute is
+;;;   "file" (any case) at any depth -- a FILE-INPUT or a raw node -- the form
+;;;   element gets enctype="multipart/form-data" after its hx attributes and
+;;;   before the caller's attrs (also when the link resolves to NIL). htmx
+;;;   2.0.11 sends a form with that enctype as multipart FormData (its
+;;;   usesFormData test), so no hx-encoding attribute is needed. Forms without
+;;;   a file input are unchanged.
+;;;
+;;; UPLOADED-FILE (a struct, read-only slots):
+;;;   FILENAME    the client's file name reduced to its last path segment (the
+;;;               text after the last "/" or "\"), control characters removed;
+;;;               NIL when that leaves nothing. Never used as a path here.
+;;;   MEDIA-TYPE  lowercase "type/subtype" without parameters
+;;;               (STACK-MIME:MEDIA-TYPE-ESSENTIALS of the part's Content-Type),
+;;;               "application/octet-stream" when the part has none.
+;;;   SIZE        octets, a non-negative integer.
+;;;   OCTETS      the content as a (simple-array (unsigned-byte 8) (*)), or NIL
+;;;               when PATH holds it.
+;;;   PATH        a pathname of a server-spooled copy, or NIL. canvas-protocol
+;;;               never writes files; a codec that spools large parts sets it.
+;;;
+;;; COERCE-PARAM value :file &key field default required max-size accept multiple
+;;; (MIN MAX CHOICES are ignored for :file; MAX-SIZE ACCEPT MULTIPLE are ignored
+;;; for the other types.)
+;;; - VALUE items: NIL; a string; a STACK-MIME:MIME-ENTITY (a multipart part,
+;;;   as mime-protocol's PARSE-MIME returns it); an UPLOADED-FILE. Any other
+;;;   object -> CANVAS-ERROR (a server bug, not user input).
+;;; - Missing: NIL, "", or a part whose disposition filename is "" (what a
+;;;   browser sends for a file input left empty). Missing -> REQUIRED: error
+;;;   :required, else DEFAULT.
+;;; - A non-empty string, or a part without a filename parameter (a plain text
+;;;   field) -> error :file. So does a list when MULTIPLE is NIL.
+;;; - A part with a filename -> a fresh UPLOADED-FILE: FILENAME from
+;;;   STACK-MIME:DISPOSITION-FILENAME as above, MEDIA-TYPE, OCTETS = the part's
+;;;   decoded content (STACK-MIME:MIME-CONTENT; NIL -> empty), SIZE its length,
+;;;   PATH NIL. An UPLOADED-FILE is taken as it is (the same object).
+;;; - Then, in this order: MAX-SIZE (NIL or a non-negative integer, else
+;;;   CANVAS-ERROR) -> SIZE above it signals CANVAS-UPLOAD-TOO-LARGE
+;;;   (expected :max-size, detail MAX-SIZE, size SIZE); ACCEPT (the FILE-INPUT
+;;;   entry rules; invalid -> CANVAS-ERROR before VALUE is looked at) -> no
+;;;   entry matches: error :accept, detail the entry strings. An entry ".ext"
+;;;   matches a FILENAME ending in it (case-insensitive; a NIL filename matches
+;;;   no extension); "type/*" matches a MEDIA-TYPE of that type; "type/sub"
+;;;   matches it exactly (case-insensitive).
+;;; - MULTIPLE NIL -> the UPLOADED-FILE. MULTIPLE true -> VALUE is one item or
+;;;   a list of items; missing items are dropped; none left is missing (as
+;;;   above); otherwise a list of UPLOADED-FILEs in the given order, each
+;;;   checked in turn; the first failure is signalled with :value that item.
+;;; - Errors are CANVAS-COERCION-ERRORs signalled with ERROR inside the
+;;;   restarts USE-VALUE (v) -> v and USE-DEFAULT () -> DEFAULT, for the whole
+;;;   field, exactly like the other types; FIELD names the field in the text
+;;;   ("photo must be at most 1048576 bytes"). COERCE-FORM and ERROR-FRAGMENT
+;;;   work unchanged, so an upload error renders next to its FILE-INPUT.
+;;; The request body limit stays the server's (rpc-backend-htmx's
+;;; :max-body-bytes, 413); MAX-SIZE is the per-field limit on top of it.
 
 (defclass input-component (component)
   ((name :initarg :name :reader input-name)
@@ -95,6 +167,24 @@
   (%make 'textarea :name name :label label :value value :rows rows :placeholder placeholder
                    :required required :error error :id id :attrs attrs))
 
+(defclass file-input (input-component)
+  ((accept :initarg :accept :initform nil :reader input-accept)
+   (multiple :initarg :multiple :initform nil :reader input-multiple-p)))
+
+(defun file-input (name &key label accept multiple required error id attrs)
+  (%make 'file-input :name name :label label :accept accept :multiple multiple
+                     :required required :error error :id id :attrs attrs))
+
+(defstruct (uploaded-file (:constructor make-uploaded-file
+                              (&key filename (media-type "application/octet-stream")
+                                    (size 0) octets path)))
+  "One uploaded file. See the file header."
+  (filename nil :type (or null string) :read-only t)
+  (media-type "application/octet-stream" :type string :read-only t)
+  (size 0 :type (integer 0) :read-only t)
+  (octets nil :type (or null (simple-array (unsigned-byte 8) (*))) :read-only t)
+  (path nil :type (or null pathname) :read-only t))
+
 (defclass submit-button (component)
   ((label :initarg :label :reader submit-label)
    (name :initarg :name :initform nil :reader submit-name)
@@ -136,6 +226,41 @@
     (unless (and (%proper-list-p options)
                  (every (lambda (o) (stringp (%option-value o))) options))
       (%canvas-error "select options must be strings or (value . label) conses: ~S" options)))
+  (call-next-method))
+
+(defun %accept-token-p (string)
+  "STRING is a media-type token as the file header defines it:
+[A-Za-z0-9] followed by [A-Za-z0-9!#$&^_.+-]*."
+  (%token-p string #'%ascii-alnum-p
+            (lambda (c) (or (%ascii-alnum-p c) (find c "!#$&^_.+-")))))
+
+(defun %accept-entry-p (entry)
+  "ENTRY is \".ext\" (\".\" [A-Za-z0-9] [A-Za-z0-9._+-]*) or TYPE \"/\" (SUBTYPE | \"*\")."
+  (if (and (plusp (length entry)) (char= (char entry 0) #\.))
+      (%token-p (subseq entry 1) #'%ascii-alnum-p
+                (lambda (c) (or (%ascii-alnum-p c) (find c "._+-"))))
+      (let ((slash (position #\/ entry)))
+        (and slash
+             (%accept-token-p (subseq entry 0 slash))
+             (let ((subtype (subseq entry (1+ slash))))
+               (or (string= subtype "*") (%accept-token-p subtype)))))))
+
+(defun %accept-entries (accept)
+  "ACCEPT (NIL, a string or a list of strings) -> the list of trimmed entries,
+validated; invalid -> CANVAS-ERROR. See the file header."
+  (when accept
+    (let ((entries (cond ((stringp accept) (%split accept #\,))
+                         ((and (%proper-list-p accept) (every #'stringp accept)) accept)
+                         (t (%canvas-error "accept must be NIL, a string or a list of strings: ~S"
+                                           accept)))))
+      (loop for entry in entries
+            for trimmed = (string-trim " " entry)
+            unless (%accept-entry-p trimmed)
+              do (%canvas-error "invalid accept entry ~S (want .ext, type/subtype or type/*)" entry)
+            collect trimmed))))
+
+(defmethod validate-component ((c file-input))
+  (%accept-entries (input-accept c))
   (call-next-method))
 
 (defmethod validate-component ((c submit-button))
@@ -220,9 +345,26 @@
                                              :placeholder (input-placeholder c))
                    (input-value c))))
 
+(defmethod render ((c file-input))
+  (let ((entries (%accept-entries (input-accept c))))
+    (%labelled c (el :input (%control-attrs c "file"
+                                            :accept (and entries (format nil "~{~A~^,~}" entries))
+                                            :multiple (and (input-multiple-p c) t))))))
+
 (defmethod render ((c submit-button))
   (el :button (%own c :type "submit" :name (submit-name c) :value (submit-value c))
       (submit-label c)))
+
+(defun %holds-file-input-p (nodes)
+  "NODES (a RENDER result) hold, at any depth, an <input> whose type is \"file\" (any case)."
+  (labels ((walk (node)
+             (cond ((listp node) (some #'walk node))
+                   ((stack-html:html-element-p node)
+                    (or (and (string-equal (stack-html:html-element-name node) "input")
+                             (let ((type (stack-html:element-attr node "type")))
+                               (and (stringp type) (string-equal type "file"))))
+                        (some #'walk (stack-html:html-element-children node)))))))
+    (walk nodes)))
 
 (defmethod render ((c form))
   (let* ((id (component-id c))
@@ -230,9 +372,15 @@
          (link (form-link c))
          (hx (when link
                (hx-post link :target (or target (and id (%str "#" id)))
-                             :swap (or (form-swap c) (and id (null target) :outer-html))))))
-    (el :form (append (list :id id) hx (component-attrs c))
-        (component-children c))))
+                             :swap (or (form-swap c) (and id (null target) :outer-html)))))
+         ;; Rendered once: EL renders these nodes again, which is the identity.
+         (children (render (component-children c))))
+    (el :form (append (list :id id)
+                      hx
+                      (when (%holds-file-input-p children)
+                        (list :enctype "multipart/form-data"))
+                      (component-attrs c))
+        children)))
 
 (defmethod render ((c canvas-coercion-error))
   (error-fragment c))
@@ -329,10 +477,136 @@
      (let ((v (find trimmed (mapcar #'%option-value choices) :test #'string=)))
        (values v (and v t))))))
 
-(defun coerce-param (value type &key (field "value") default required min max choices)
+;;; :file coercion
+
+(defun %upload-filename (raw)
+  "RAW (a client file name) -> its last path segment (after the last / or \\),
+control characters removed; NIL when nothing is left."
+  (let* ((cut (position-if (lambda (c) (or (char= c #\/) (char= c #\\))) raw :from-end t))
+         (name (%remove-controls (subseq raw (if cut (1+ cut) 0)))))
+    (and (plusp (length name)) name)))
+
+(defun %upload-media-type (part field)
+  "The lowercase type/subtype of PART's Content-Type, application/octet-stream without one."
+  (let ((type (stack-mime:mime-content-type part)))
+    (typecase type
+      (null "application/octet-stream")
+      (stack-mime:media-type (string-downcase (stack-mime:media-type-essentials type)))
+      (t (%canvas-error "~A: a MIME part's content type must be a media-type, not a ~(~A~)"
+                        field (type-of type))))))
+
+(defun %upload-octets (part field)
+  "PART's decoded content as a simple octet vector (NIL -> an empty one)."
+  (let ((content (stack-mime:mime-content part)))
+    (typecase content
+      (null (make-array 0 :element-type '(unsigned-byte 8)))
+      ((vector (unsigned-byte 8)) (coerce content '(simple-array (unsigned-byte 8) (*))))
+      (string (coerce (stack-mime:decode-content content :binary)
+                      '(simple-array (unsigned-byte 8) (*))))
+      (t (%canvas-error "~A: a MIME part's content must be octets, not a ~(~A~)"
+                        field (type-of content))))))
+
+(defun %upload-item (item field)
+  "One :file VALUE item -> :missing, :not-a-file, or an UPLOADED-FILE (fresh for a
+part, ITEM itself for an uploaded-file). Any other object is a server bug -> CANVAS-ERROR."
+  (typecase item
+    (null :missing)
+    (string (if (zerop (length item)) :missing :not-a-file))
+    (uploaded-file item)
+    (stack-mime:mime-entity
+     (let* ((disposition (stack-mime:mime-content-disposition item))
+            ;; DISPOSITION-FILENAME may signal MIME-PARSE-ERROR (filename*): not wrapped.
+            (raw (and disposition (stack-mime:disposition-filename disposition))))
+       (cond ((null raw) :not-a-file)
+             ((zerop (length raw)) :missing) ; the raw "": "dir/" is a file without a name
+             (t (let ((octets (%upload-octets item field)))
+                  (make-uploaded-file :filename (%upload-filename raw)
+                                      :media-type (%upload-media-type item field)
+                                      :size (length octets)
+                                      :octets octets))))))
+    (t (%canvas-error "~A: an upload must be NIL, a string, a MIME part or an uploaded-file, not a ~(~A~)"
+                      field (type-of item)))))
+
+(defun %accept-match-p (file entries)
+  "FILE matches one of the accept ENTRIES (see the file header): \".ext\" a filename
+ending in it, \"type/*\" a media type of that type, \"type/sub\" exactly; all
+case-insensitive. Plain string comparison of the normalized values."
+  (let ((filename (uploaded-file-filename file))
+        (media-type (uploaded-file-media-type file)))
+    (some (lambda (entry)
+            (let ((slash (position #\/ entry)))
+              (cond ((null slash)
+                     (and filename
+                          (>= (length filename) (length entry))
+                          (string-equal entry filename
+                                        :start2 (- (length filename) (length entry)))))
+                    ((string= "/*" entry :start2 slash)
+                     (let ((end (position #\/ media-type)))
+                       (and end (string-equal entry media-type :end1 slash :end2 end))))
+                    (t (string-equal entry media-type)))))
+          entries)))
+
+(defun %coerce-upload (value &key field default required max-size accept multiple)
+  "COERCE-PARAM for :file. See the file header."
+  (unless (typep max-size '(or null (integer 0)))
+    (%canvas-error "~A: :max-size must be NIL or a non-negative integer, not ~S" field max-size))
+  (let ((entries (%accept-entries accept)))
+    (labels ((offer (condition)
+               ;; The restartable form is a literal ERROR, so both restarts are
+               ;; associated with CONDITION (CLHS 9.1.4.2.2); they answer for the
+               ;; whole field.
+               (return-from %coerce-upload
+                 (restart-case (error condition)
+                   (use-value (new-value)
+                     :report "Use a value instead of the upload."
+                     new-value)
+                   (use-default ()
+                     :report "Use the field's default."
+                     default))))
+             (fail (item expected &optional detail)
+               (offer (make-condition 'canvas-coercion-error :field field :value item
+                                                             :expected expected :detail detail)))
+             (missing ()
+               (if required (fail value :required) default))
+             (check (item file)
+               ;; Not a file, then the size, then the type.
+               (when (eq file :not-a-file)
+                 (fail item :file))
+               (let ((size (uploaded-file-size file)))
+                 (when (and max-size (> size max-size))
+                   (offer (make-condition 'canvas-upload-too-large :field field :value item
+                                                                   :detail max-size :size size))))
+               (when (and entries (not (%accept-match-p file entries)))
+                 (fail item :accept entries))
+               file))
+      (if (not multiple)
+          (if (consp value)
+              (fail value :file)
+              (let ((file (%upload-item value field)))
+                (if (eq file :missing) (missing) (check value file))))
+          (let* ((items (cond ((null value) '())
+                              ((atom value) (list value))
+                              ((%proper-list-p value) value)
+                              (t (%canvas-error "~A: uploads must be one item or a proper list" field))))
+                 ;; Classify every item first: server bugs before any coercion error.
+                 (pairs (loop for item in items
+                              for file = (%upload-item item field)
+                              unless (eq file :missing)
+                                collect (cons item file))))
+            (if pairs
+                (loop for (item . file) in pairs
+                      collect (check item file))
+                (missing)))))))
+
+(defun coerce-param (value type &key (field "value") default required min max choices
+                                     max-size accept multiple)
   "Coerce the request string VALUE to TYPE. See the file header."
   (unless (member type +coercion-types+)
     (%canvas-error "unknown coercion type ~S (one of ~S)" type +coercion-types+))
+  (when (eq type :file)
+    (return-from coerce-param
+      (%coerce-upload value :field field :default default :required required
+                            :max-size max-size :accept accept :multiple multiple)))
   (unless (or (null value) (stringp value))
     (%canvas-error "~A: a request value must be a string or NIL, not ~S" field value))
   (when (eq type :choice)

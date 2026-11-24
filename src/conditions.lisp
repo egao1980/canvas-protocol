@@ -2,8 +2,12 @@
 
 ;;; Conditions (CLHS 9). Every error canvas-protocol signals on purpose is a
 ;;; CANVAS-ERROR. Restart names exported: USE-DEFAULT (coerce-param),
-;;; STRIP-VIOLATIONS (page), USE-PLACEHOLDER (render of a chart); CL:USE-VALUE
-;;; is offered by coerce-param, chart-node and the asset lookups.
+;;; STRIP-VIOLATIONS (page, svg-fragment), USE-PLACEHOLDER (render of a chart);
+;;; CL:USE-VALUE is offered by coerce-param, chart-node and the asset lookups.
+;;;
+;;; 0.2.0 (HX2) adds UNSAFE-SVG (svg-fragment, see svg.lisp), the :file
+;;; coercion type with the expectations :file :max-size :accept, and
+;;; CANVAS-UPLOAD-TOO-LARGE (forms.lisp).
 
 (define-condition h4h0-pending (error)
   ((name :initarg :name :reader h4h0-pending-name))
@@ -28,6 +32,13 @@
   (:documentation "Output that would break the H8d-1 CSP (script-src 'self', style-src 'self').
 VIOLATIONS is a list of plists as returned by CSP-VIOLATIONS."))
 
+(define-condition unsafe-svg (canvas-csp-error) ()
+  (:documentation "SVG-FRAGMENT found content outside its allowlist (svg.lisp). VIOLATIONS
+(CSP-ERROR-VIOLATIONS) lists each offending element or attribute in document
+order as (:kind KIND :element LOCAL-NAME :attribute QNAME-or-NIL); KIND is one of
+:inline-script :foreign-object :element :event-handler :htmx-attribute :attribute
+:external-href :css-url. Signalled with ERROR inside the restart STRIP-VIOLATIONS."))
+
 (define-condition canvas-asset-not-found (canvas-error)
   ((name :initarg :name :reader asset-error-name))
   (:report (lambda (c s)
@@ -35,16 +46,18 @@ VIOLATIONS is a list of plists as returned by CSP-VIOLATIONS."))
 
 ;;; Form coercion
 
-(defparameter +coercion-types+ '(:string :integer :float :boolean :date :choice)
-  "Types COERCE-PARAM accepts.")
+(defparameter +coercion-types+ '(:string :integer :float :boolean :date :choice :file)
+  "Types COERCE-PARAM accepts. :file (0.2.0) takes uploaded parts, see forms.lisp.")
 
 (define-condition canvas-coercion-error (canvas-error)
   ((field :initarg :field :initform "value" :reader coercion-error-field)
    (value :initarg :value :initform nil :reader coercion-error-value)
    (expected :initarg :expected :reader coercion-error-expected
-             :documentation "One of :required :integer :float :boolean :date :choice :min :max.")
+             :documentation "One of :required :integer :float :boolean :date :choice :min :max,
+or for :file (0.2.0) :file :max-size :accept.")
    (detail :initarg :detail :initform nil :reader coercion-error-detail
-           :documentation "The bound for :min / :max, the choice values for :choice, else NIL."))
+           :documentation "The bound for :min / :max / :max-size, the choice values for :choice,
+the accept entries for :accept, else NIL."))
   (:report (lambda (c s) (write-string (coercion-error-text c) s))))
 
 (defun coercion-error-text (condition)
@@ -59,7 +72,17 @@ VIOLATIONS is a list of plists as returned by CSP-VIOLATIONS."))
       (:date (format nil "~A must be a date (YYYY-MM-DD)" field))
       (:choice (format nil "~A must be one of: ~{~A~^, ~}" field detail))
       (:min (format nil "~A must be at least ~A" field detail))
-      (:max (format nil "~A must be at most ~A" field detail)))))
+      (:max (format nil "~A must be at most ~A" field detail))
+      (:file (format nil "~A must be a file" field))
+      (:max-size (format nil "~A must be at most ~D bytes" field detail))
+      (:accept (format nil "~A must be a file of type: ~{~A~^, ~}" field detail)))))
+
+(define-condition canvas-upload-too-large (canvas-coercion-error)
+  ((size :initarg :size :reader upload-error-size
+         :documentation "The uploaded file's size in octets."))
+  (:default-initargs :expected :max-size)
+  (:documentation "An uploaded file is larger than COERCE-PARAM's :max-size (the DETAIL).
+Signalled like every coercion error: ERROR inside USE-VALUE and USE-DEFAULT."))
 
 ;;; Charts
 

@@ -22,6 +22,74 @@
 ;;;   HTML-safe by itself ("<" stays raw): html-protocol escapes attribute values.
 ;;; - PUSH-URL: T -> "true", a string as is.
 ;;;
+;;; 0.2.0 (HX2) adds two keys, so the full order is
+;;;   :hx-get|:hx-post :hx-target :hx-swap :hx-trigger :hx-select :hx-include
+;;;   :hx-vals :hx-push-url :hx-confirm :hx-indicator :hx-sync :data-canvas-keys
+;;; - TRIGGER is unchanged: one string, passed as given, so every htmx
+;;;   modifier and several comma-separated triggers work ("input changed
+;;;   delay:300ms", "keydown from:body", "load, every 5s", "click once
+;;;   consume", "canvas:key queue:all"). A "[" is still refused
+;;;   (CANVAS-CSP-ERROR, and CSP-VIOLATIONS reports :eval-trigger for one in
+;;;   a raw tree): htmx evaluates an event filter such as
+;;;   keydown[key=='ArrowUp'] as a JavaScript expression (the Function
+;;;   constructor, through maybeEval), which needs 'unsafe-eval' in the CSP.
+;;;   The canvas CSP has none, and with allowEval false (+HTMX-CONFIG+)
+;;;   htmx 2.0.11's maybeEval hands back its default, a function that always
+;;;   answers true, so a filter would silently match every event. Key
+;;;   bindings go through KEYS and the same-origin keymap script instead.
+;;; - SYNC: (HX-SYNC-VALUE sync) -> :hx-sync.
+;;; - KEYS: a key-chord string or a list of them. Each is canonicalized with
+;;;   KEY-CHORD; duplicates after that are dropped (first one kept) and the
+;;;   rest joined with single spaces -> :data-canvas-keys. KEYS NIL -> no key
+;;;   attribute. With KEYS and no TRIGGER, :hx-trigger is +CANVAS-KEY-EVENT+
+;;;   ("canvas:key"). With KEYS and a TRIGGER, the trigger must listen for it:
+;;;   one of its comma-separated specs, trimmed, has "canvas:key" as its first
+;;;   space-separated token ("canvas:key throttle:50ms", "click, canvas:key");
+;;;   otherwise CANVAS-ERROR.
+;;;   The event comes from the asset canvas-keys.js (see its header: chords,
+;;;   form-field focus, the request parameter "key" = the pressed chord), which
+;;;   a page loads with (PAGE body :keys t). Without that script no event fires
+;;;   and no request is sent.
+;;;
+;;; HX-SYNC-VALUE sync -> the hx-sync attribute string (also usable in ATTRS
+;;; of a form or container, since htmx inherits hx-sync):
+;;; - a keyword of +HTMX-SYNC-STRATEGIES+ -> "this:<strategy>" (:queue-all ->
+;;;   "this:queue all");
+;;; - a string in the one shape htmx 2.0.11 parses: SELECTOR, or SELECTOR ":"
+;;;   STRATEGY. htmx splits at ":" and reads only the first two pieces, so at
+;;;   most one ":" is allowed. SELECTOR, trimmed, is non-empty ("this",
+;;;   "closest form", "#editor"); STRATEGY, trimmed, is one of the
+;;;   +HTMX-SYNC-STRATEGIES+ strings (htmx's default for a bare SELECTOR is
+;;;   drop). The string is returned as given;
+;;; - CR or LF, or anything else -> CANVAS-ERROR.
+;;;
+;;; HX-SWAP-OOB &key swap target -> (:hx-swap-oob VALUE), the attribute for the
+;;; root of a response fragment that htmx swaps out of band, so that one
+;;; response updates several panels:
+;;; - neither -> "true" (replace the element with the same id);
+;;; - SWAP -> its style: a keyword of +HTMX-SWAP-STYLES+ or one of their
+;;;   strings. No modifiers: htmx cuts the value at its first ":", so
+;;;   "innerHTML show:top" would name the selector "top";
+;;; - TARGET (a CSS selector) -> "<style>:<target>", style default "outerHTML";
+;;; - an empty or non-string TARGET, a TARGET with CR or LF, a SWAP with a
+;;;   space or a ":", an unknown style -> CANVAS-ERROR.
+;;;
+;;; KEY-CHORD string -> the canonical chord string canvas-keys.js produces:
+;;; - "+"-separated tokens: zero or more modifiers, then exactly one key.
+;;;   Modifiers, case-insensitive: "ctrl" or "control" -> Ctrl, "alt" -> Alt,
+;;;   "shift" -> Shift, "meta" -> Meta; printed in the order Ctrl, Alt,
+;;;   Shift, Meta, each followed by "+".
+;;; - Key: a name in +CANVAS-KEY-NAMES+, matched case-insensitively and
+;;;   printed as listed ("arrowup" -> "ArrowUp", "space" -> "Space"); or one
+;;;   ASCII graphic character other than "+" (code 33..126), a letter printed
+;;;   in lower case ("Ctrl+Z" -> "Ctrl+z"). The "+" key is "Plus", the space
+;;;   bar "Space".
+;;; - Shift with a one-character key that is not a letter -> CANVAS-ERROR: the
+;;;   browser reports the shifted character itself ("?", not Shift+/), so the
+;;;   chord could never match. Shift with "Plus" -> CANVAS-ERROR likewise.
+;;; - A repeated modifier, an empty token ("Ctrl++", "", "Ctrl+"), a key that
+;;;   is neither, a non-string -> CANVAS-ERROR.
+;;;
 ;;; HTMX-RESPONSE-HEADERS -> alist ("HX-..." . string) sorted by header name
 ;;; (string<). Keys -> headers: :location HX-Location, :push-url HX-Push-Url,
 ;;; :redirect HX-Redirect, :refresh HX-Refresh (T -> "true"), :replace-url
@@ -46,6 +114,21 @@
     (:before-end . "beforeend") (:after-end . "afterend")
     (:delete . "delete") (:none . "none"))
   "Keyword -> htmx hx-swap style.")
+
+(defparameter +htmx-sync-strategies+
+  '((:drop . "drop") (:abort . "abort") (:replace . "replace") (:queue . "queue")
+    (:queue-first . "queue first") (:queue-last . "queue last") (:queue-all . "queue all"))
+  "Keyword -> htmx hx-sync strategy (htmx 2.0.11).")
+
+(defparameter +canvas-key-event+ "canvas:key"
+  "The event canvas-keys.js dispatches on an element whose data-canvas-keys lists the chord.")
+
+(defparameter +canvas-key-names+
+  '("Enter" "Tab" "Escape" "Backspace" "Delete" "Insert" "Home" "End" "PageUp" "PageDown"
+    "ArrowUp" "ArrowDown" "ArrowLeft" "ArrowRight" "Space" "Plus"
+    "F1" "F2" "F3" "F4" "F5" "F6" "F7" "F8" "F9" "F10" "F11" "F12")
+  "Named keys KEY-CHORD accepts, spelled as canvas-keys.js reports them
+(KeyboardEvent.key, with \" \" as Space and \"+\" as Plus).")
 
 (defun %event-name-p (string)
   "STRING matches [A-Za-z0-9_.:-]+ (ASCII only)."
@@ -100,30 +183,142 @@
 (defun %hx-push-url (push-url)
   (if (eq push-url t) "true" (%string-option :push-url push-url)))
 
-(defun %hx (verb link target swap trigger select include vals push-url confirm indicator)
+(defun %trim-blank (string)
+  "STRING without leading and trailing spaces and tabs."
+  (string-trim '(#\Space #\Tab) string))
+
+(defun hx-sync-value (sync)
+  "SYNC keyword or string -> the hx-sync attribute string. See the file header."
+  (cond ((keywordp sync)
+         (%str "this:" (or (cdr (assoc sync +htmx-sync-strategies+))
+                           (%canvas-error "unknown hx-sync strategy ~S" sync))))
+        ((stringp sync)
+         (%no-crlf "hx-sync" sync)
+         ;; htmx splits at ":" and reads two pieces: at most one ":".
+         (let ((pieces (%split sync #\:)))
+           (unless (and (<= (length pieces) 2)
+                        (plusp (length (%trim-blank (first pieces))))
+                        (or (null (rest pieces))
+                            (member (%trim-blank (second pieces)) +htmx-sync-strategies+
+                                    :key #'cdr :test #'string=)))
+             (%canvas-error "invalid hx-sync ~S (want SELECTOR or SELECTOR:STRATEGY)" sync))
+           sync))
+        (t (%canvas-error "hx-sync must be a keyword or string: ~S" sync))))
+
+(defun hx-swap-oob (&key swap target)
+  "(:hx-swap-oob VALUE) for an out-of-band response fragment. See the file header."
+  (let ((style (cond ((null swap) nil)
+                     ((keywordp swap)
+                      (or (cdr (assoc swap +htmx-swap-styles+))
+                          (%canvas-error "unknown hx-swap-oob style ~S" swap)))
+                     ;; A style string exactly: no modifiers (not HX-SWAP-VALUE).
+                     ((and (stringp swap)
+                           (member swap +htmx-swap-styles+ :key #'cdr :test #'string=))
+                      swap)
+                     (t (%canvas-error "hx-swap-oob :swap must be a swap style without modifiers: ~S"
+                                       swap)))))
+    (when target
+      (unless (and (stringp target) (plusp (length target)))
+        (%canvas-error "hx-swap-oob :target must be a non-empty string: ~S" target))
+      (%no-crlf "hx-swap-oob target" target))
+    (list :hx-swap-oob (cond (target (%str (or style "outerHTML") ":" target))
+                             (style style)
+                             (t "true")))))
+
+(defparameter +key-modifiers+
+  '(("ctrl" . "Ctrl") ("control" . "Ctrl") ("alt" . "Alt") ("shift" . "Shift") ("meta" . "Meta"))
+  "KEY-CHORD modifier spellings (case-insensitive) -> canonical modifier.")
+
+(defparameter +key-modifier-order+ '("Ctrl" "Alt" "Shift" "Meta")
+  "The order KEY-CHORD prints modifiers in.")
+
+(defun %chord-key (token)
+  "TOKEN as a chord key: a +CANVAS-KEY-NAMES+ name as listed, or one ASCII
+graphic character other than \"+\" (letters lowercased); else NIL."
+  (or (find token +canvas-key-names+ :test #'string-equal)
+      (and (= (length token) 1)
+           (<= 33 (char-code (char token 0)) 126)
+           (char/= (char token 0) #\+)
+           (string-downcase token))))
+
+(defun key-chord (string)
+  "The canonical key chord for STRING (\"ctrl+Z\" -> \"Ctrl+z\"). See the file header."
+  (unless (stringp string)
+    (%canvas-error "a key chord must be a string: ~S" string))
+  (let* ((tokens (%split string #\+))
+         (key (and (every #'plusp (mapcar #'length tokens))
+                   (%chord-key (car (last tokens)))))
+         (modifiers '()))
+    (unless key
+      (%canvas-error "invalid key chord ~S (want modifiers and one key, joined with +)" string))
+    (dolist (token (butlast tokens))
+      (let ((modifier (cdr (assoc token +key-modifiers+ :test #'string-equal))))
+        (when (or (null modifier) (member modifier modifiers :test #'string=))
+          (%canvas-error "invalid key chord ~S: unknown or repeated modifier ~S" string token))
+        (push modifier modifiers)))
+    (when (and (member "Shift" modifiers :test #'string=)
+               (or (string= key "Plus")
+                   (and (= (length key) 1) (not (%ascii-lower-p (char key 0))))))
+      (%canvas-error "invalid key chord ~S: with Shift the browser reports the shifted character"
+                     string))
+    (format nil "~{~A+~}~A"
+            (remove-if-not (lambda (m) (member m modifiers :test #'string=)) +key-modifier-order+)
+            key)))
+
+(defun %listens-for-keys-p (trigger)
+  "One comma-separated spec of TRIGGER, trimmed, has +CANVAS-KEY-EVENT+ as its
+first space-separated token."
+  (some (lambda (spec)
+          (let ((spec (%trim-blank spec)))
+            (string= +canvas-key-event+ spec :end2 (or (position #\Space spec) (length spec)))))
+        (%split trigger #\,)))
+
+(defun %hx-keys (keys trigger)
+  "KEYS (a chord or a list of chords) and the caller's TRIGGER ->
+(values data-canvas-keys-string effective-trigger). See the file header."
+  (let ((chords (cond ((stringp keys) (list (key-chord keys)))
+                      ((and (consp keys) (%proper-list-p keys)) (mapcar #'key-chord keys))
+                      (t (%canvas-error "keys must be a key chord or a list of them: ~S" keys)))))
+    (values (format nil "~{~A~^ ~}" (remove-duplicates chords :test #'string= :from-end t))
+            (cond ((null trigger) +canvas-key-event+)
+                  ((%listens-for-keys-p (%string-option :trigger trigger))
+                   trigger)             ; "[" and CR/LF are still checked by %HX-TRIGGER
+                  (t (%canvas-error "with :keys, :trigger must listen for ~A: ~S"
+                                    +canvas-key-event+ trigger))))))
+
+(defun %hx (verb link target swap trigger select include vals push-url confirm indicator
+            &optional sync keys)
   "Shared body of HX-GET / HX-POST: options are validated first, then a NIL URL -> NIL."
-  (let* ((url (%hx-url verb link))
-         (pairs (list (cons :hx-target (and target (%string-option :target target)))
-                      (cons :hx-swap (and swap (hx-swap-value swap)))
-                      (cons :hx-trigger (and trigger (%hx-trigger trigger)))
-                      (cons :hx-select (and select (%string-option :select select)))
-                      (cons :hx-include (and include (%string-option :include include)))
-                      (cons :hx-vals (and vals (%hx-vals vals)))
-                      (cons :hx-push-url (and push-url (%hx-push-url push-url)))
-                      (cons :hx-confirm (and confirm (%string-option :confirm confirm)))
-                      (cons :hx-indicator (and indicator (%string-option :indicator indicator))))))
-    (when url
-      (list* verb url
-             (loop for (key . value) in pairs
-                   when value nconc (list key value))))))
+  (multiple-value-bind (key-list trigger)
+      (if keys (%hx-keys keys trigger) (values nil trigger))
+    (let* ((url (%hx-url verb link))
+           (pairs (list (cons :hx-target (and target (%string-option :target target)))
+                        (cons :hx-swap (and swap (hx-swap-value swap)))
+                        (cons :hx-trigger (and trigger (%hx-trigger trigger)))
+                        (cons :hx-select (and select (%string-option :select select)))
+                        (cons :hx-include (and include (%string-option :include include)))
+                        (cons :hx-vals (and vals (%hx-vals vals)))
+                        (cons :hx-push-url (and push-url (%hx-push-url push-url)))
+                        (cons :hx-confirm (and confirm (%string-option :confirm confirm)))
+                        (cons :hx-indicator (and indicator (%string-option :indicator indicator)))
+                        (cons :hx-sync (and sync (hx-sync-value sync)))
+                        (cons :data-canvas-keys key-list))))
+      (when url
+        (list* verb url
+               (loop for (key . value) in pairs
+                     when value nconc (list key value)))))))
 
-(defun hx-get (link &key target swap trigger select include vals push-url confirm indicator)
+(defun hx-get (link &key target swap trigger select include vals push-url confirm indicator
+                         sync keys)
   "Attribute plist for an hx-get to LINK. See the file header."
-  (%hx :hx-get link target swap trigger select include vals push-url confirm indicator))
+  (%hx :hx-get link target swap trigger select include vals push-url confirm indicator
+       sync keys))
 
-(defun hx-post (link &key target swap trigger select include vals push-url confirm indicator)
+(defun hx-post (link &key target swap trigger select include vals push-url confirm indicator
+                          sync keys)
   "Attribute plist for an hx-post to LINK. See the file header."
-  (%hx :hx-post link target swap trigger select include vals push-url confirm indicator))
+  (%hx :hx-post link target swap trigger select include vals push-url confirm indicator
+       sync keys))
 
 (defun %header-value (key value)
   (cond ((stringp value) value)

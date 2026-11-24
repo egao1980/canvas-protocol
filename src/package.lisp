@@ -9,6 +9,7 @@
    #:canvas-coercion-error #:coercion-error-field #:coercion-error-value
    #:coercion-error-expected #:coercion-error-detail #:coercion-error-text
    #:canvas-asset-not-found #:asset-error-name
+   #:unsafe-svg #:canvas-upload-too-large #:upload-error-size
    #:invalid-chart #:invalid-chart-field #:invalid-chart-reason
    #:chart-backend-missing #:chart-backend-missing-chart
    #:use-default #:strip-violations #:use-placeholder
@@ -28,6 +29,10 @@
    #:textarea #:submit-button
    #:coerce-param #:coerce-form #:find-field-error #:error-fragment
    #:+coercion-types+
+   ;; uploads (0.2.0)
+   #:file-input
+   #:uploaded-file #:uploaded-file-p #:make-uploaded-file #:uploaded-file-filename
+   #:uploaded-file-media-type #:uploaded-file-size #:uploaded-file-octets #:uploaded-file-path
    ;; urls + htmx
    #:*canvas-resolver* #:canvas-resolver #:resolve-canvas-url #:resolve-asset-url
    #:path-resolver #:make-path-resolver #:path-resolver-prefix #:path-resolver-asset-prefix
@@ -35,11 +40,17 @@
    #:canvas-link #:canvas-link-p #:canvas-link-function #:canvas-link-params
    #:canvas-url #:link-url
    #:hx-get #:hx-post #:hx-swap-value #:+htmx-swap-styles+
+   ;; hx coverage (0.2.0)
+   #:hx-sync-value #:+htmx-sync-strategies+ #:hx-swap-oob
+   #:key-chord #:+canvas-key-names+ #:+canvas-key-event+
    #:htmx-response-headers
    ;; sse
    #:sse-connect #:sse-swap #:sse-close #:fragment-event
    ;; page, csp, freeze
    #:page #:+htmx-config+ #:csp-violations #:neutralize #:freeze
+   ;; engine SVG (0.2.0)
+   #:svg-fragment #:+svg-namespace+ #:+xlink-namespace+ #:+svg-elements+
+   #:+svg-attributes+ #:+svg-dropped-elements+ #:+svg-dropped-attributes+
    ;; assets
    #:+htmx-version+ #:+htmx-sse-version+
    #:asset-names #:asset-bytes #:asset-content-type #:asset-sha256

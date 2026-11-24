@@ -12,8 +12,9 @@
             collect (cons (string-trim " *" (subseq line 64)) (subseq line 0 64)))))
 
 (deftest asset-catalogue
-  (ok (equal '("canvas.css" "htmx-ext-sse.min.js" "htmx.min.js") (asset-names)))
+  (ok (equal '("canvas-keys.js" "canvas.css" "htmx-ext-sse.min.js" "htmx.min.js") (asset-names)))
   (ok (string= "text/css; charset=utf-8" (asset-content-type "canvas.css")))
+  (ok (string= "text/javascript; charset=utf-8" (asset-content-type "canvas-keys.js")))
   (ok (string= "text/javascript; charset=utf-8" (asset-content-type "htmx.min.js")))
   (ok (string= "text/javascript; charset=utf-8" (asset-content-type "htmx-ext-sse.min.js")))
   (ok (string= "2.0.11" +htmx-version+))
@@ -48,7 +49,7 @@
                (asset-sha256 "htmx.min.js")))
   (ok (string= "98a46496de0c3605fbffdce9167ba427bdd9553184f83f149c261891a92c0136"
                (asset-sha256 "htmx-ext-sse.min.js")))
-  (dolist (name '("canvas.css" "htmx-ext-sse.min.js" "htmx.min.js"))
+  (dolist (name '("canvas-keys.js" "canvas.css" "htmx-ext-sse.min.js" "htmx.min.js"))
     (ok (string= (sha256-hex (asset-bytes name)) (asset-sha256 name)) (format nil "computed ~A" name))
     (ok (string= (cdr (assoc name (recorded-sums) :test #'string=)) (asset-sha256 name))
         (format nil "SHA256SUMS ~A" name))))
@@ -56,7 +57,8 @@
 (deftest asset-licenses
   (ok (contains "Zero-Clause BSD" (asset-license "htmx.min.js")))
   (ok (contains "BSD Zero Clause License" (asset-license "htmx-ext-sse.min.js")))
-  (ok (null (asset-license "canvas.css"))))
+  (ok (null (asset-license "canvas.css")))
+  (ok (null (asset-license "canvas-keys.js"))))
 
 (deftest asset-unknown
   (dolist (name '("evil/../x" "../canvas-protocol.asd" "SHA256SUMS" "LICENSE.htmx" ""))
