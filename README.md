@@ -16,6 +16,8 @@ Live HTML canvases for [cl-stack](https://github.com/egao1980/cl-stack) (H4h). A
 
 0.2.0 (HX2: issues #6 and #7): the exact rules are in each `src/*.lisp` header, and the Rove suite under `tests/` checks them.
 
+0.2.1 requires mime-protocol 0.3.1, so an `uploaded-file` filename is the name the browser sent: raw UTF-8 such as `Ünïcödé — 楽譜.svg`, and `C:\fakepath\x.svg` → `x.svg` (mime-protocol#14). It also requires xml-backend-native 0.1.1, where `svg-fragment` signals `xml-well-formed-error` for a character reference to a control character.
+
 Servers live elsewhere: [rpc-backend-htmx](https://github.com/egao1980/rpc-backend-htmx) (htmx as an rpc-protocol transport) and the cl-stack-code web view.
 
 ```lisp

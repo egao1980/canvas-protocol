@@ -1,5 +1,5 @@
 (defsystem "canvas-protocol"
-  :version "0.2.0"
+  :version "0.2.1"
   :description "Live HTML canvases for cl-stack: components, htmx helpers, freeze, chart model, engine SVG, uploads (H4h)"
   :author "egao1980"
   :license "MIT"
@@ -10,8 +10,8 @@
                (:version "json-protocol" "0.2.2")
                (:version "json-backend-jzon" "0.2.2")
                (:version "xml-protocol" "0.1.0")
-               (:version "xml-backend-native" "0.1.0")
-               (:version "mime-protocol" "0.2.0"))
+               (:version "xml-backend-native" "0.1.1")
+               (:version "mime-protocol" "0.3.1"))
   :serial t
   :components ((:module "assets"
                 :components ((:static-file "htmx.min.js")
@@ -40,7 +40,7 @@
   :in-order-to ((test-op (test-op "canvas-protocol/tests"))))
 
 (defsystem "canvas-protocol/tests"
-  :depends-on ("canvas-protocol" "rove"
+  :depends-on ("canvas-protocol" (:version "rove" "0.11.1")
                (:version "crypto-protocol" "0.2.0")
                (:version "crypto-backend-ironclad" "0.2.1"))
   :pathname "tests"

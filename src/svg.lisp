@@ -24,6 +24,8 @@
 ;;; entity other than the five predefined ones signals XML-ENTITY-ERROR too: no
 ;;; entity is ever expanded, so there are no external entities and no
 ;;; expansion bombs. A DOCTYPE without an external identifier is ignored.
+;;; A character reference outside XML 1.0 Char (&#1;, &#7;, ...) signals
+;;; STACK-XML:XML-WELL-FORMED-ERROR (xml-backend-native >= 0.1.1).
 ;;;
 ;;; ROOT: an element with local name "svg" in +SVG-NAMESPACE+ or in no
 ;;; namespace (a namespace URI of NIL or ""); otherwise CANVAS-ERROR. Every
