@@ -81,8 +81,44 @@
                                            :page "99" :page-size 2)))))
 
 (deftest table-link-params-first
+  (ok (contains (s+ "hx-get=\"" +u+ "PEOPLE?q=x&amp;sort=name\"")
+                (html (table *rows* (cols) :id "people" :link (canvas-link 'people :q "x")))))
   (ok (contains (s+ "hx-get=\"" +u+ "PEOPLE?q=x&amp;sort=name&amp;page=1\"")
-                (html (table *rows* (cols) :id "people" :link (canvas-link 'people :q "x"))))))
+                (html (table *rows* (cols) :id "people" :link (canvas-link 'people :q "x")
+                                           :page-size 2)))))
+
+;;; canvas-protocol#13: a sortable header carries page=1 only when the table pages
+;;; (PAGE-SIZE given), so an unpaged table canvas can take &key sort alone.
+
+(defun unpaged-sort-button (sort label)
+  (format nil "<button type=\"button\" hx-get=\"~APEOPLE?sort=~A\" hx-target=\"#people\" hx-swap=\"outerHTML\">~A</button>"
+          +u+ sort label))
+
+(deftest table-unpaged-sort-links-carry-no-page
+  (let ((out (html (table *rows* (cols) :id "people" :link (canvas-link 'people) :sort "age"))))
+    (ok (string= (s+ "<div id=\"people\"><table><thead><tr>"
+                     "<th scope=\"col\">" (unpaged-sort-button "name" "Name") "</th>"
+                     "<th scope=\"col\" data-align=\"end\" aria-sort=\"ascending\">"
+                     (unpaged-sort-button "-age" "Age") "</th>"
+                     "</tr></thead><tbody>" (row-html "Al" 25) (row-html "Bo" 30)
+                     (row-html "&lt;i&gt;Cy&lt;/i&gt;" 41) "</tbody></table></div>")
+                 out))
+    (ok (not (contains "page=" out)) "no page param anywhere")
+    (ok (not (contains "<nav" out)) "no pager"))
+  (ok (not (contains "page="
+                     (html (table *rows* (cols) :id "people" :link (canvas-link 'people)
+                                                :sort "-name" :page "2"))))
+      "PAGE without PAGE-SIZE is ignored and adds no page param"))
+
+(deftest table-paged-sort-links-unchanged
+  (let ((out (html (table *rows* (cols) :id "people" :link (canvas-link 'people)
+                                        :sort "name" :page "2" :page-size 2))))
+    (ok (contains (s+ "<th scope=\"col\" aria-sort=\"ascending\">" (sort-button "-name" 1 "Name") "</th>")
+                  out))
+    (ok (contains (s+ "<th scope=\"col\" data-align=\"end\">" (sort-button "age" 1 "Age") "</th>")
+                  out))
+    (ok (contains (s+ (page-button "Previous" "name" 1) "<span>Page 2 of 2</span>" (page-button "Next"))
+                  out))))
 
 (deftest table-without-link
   (let ((out (html (table *rows* (cols) :id "people" :sort "name"))))
