@@ -20,9 +20,15 @@
 ;;;   <tbody><tr><td [data-align]>formatted</td>...</tr>...</tbody></table>
 ;;;   Empty: <tbody><tr><td colspan="N"><em>EMPTY</em></td></tr></tbody>.
 ;;;   aria-sort="ascending|descending" on the column of a valid SORT.
-;;;   Sortable header with LINK: <button type="button" hx-get="<link + sort=S, page=1>"
+;;;   Sortable header with LINK: <button type="button" hx-get="<link + sort=S[, page=1]>"
 ;;;   hx-target="#ID" hx-swap="outerHTML">header</button>, S = "-name" when the
 ;;;   column is the current ascending sort, else "name". Without LINK: plain text.
+;;;   Links carry only the params the canvas uses (0.2.2, canvas-protocol#13):
+;;;   page=1 is there exactly when PAGE-SIZE is given (a new sort goes back to
+;;;   page 1); without PAGE-SIZE the table never pages, PAGE is ignored and the
+;;;   link carries sort alone, so an unpaged table canvas need only take
+;;;   &key sort. A server that refuses params a canvas does not take
+;;;   (rpc-backend-htmx >= 0.3.0) then accepts every link the table emits.
 ;;;   Pager (PAGE-SIZE given): <nav aria-label="Pages"><button type="button"
 ;;;   [disabled=""] | [hx-get=... hx-target hx-swap]>Previous</button><span>Page P of N</span>
 ;;;   <button ...>Next</button></nav>; page links carry the current valid sort
@@ -185,7 +191,8 @@
                                     (%str "-" name)
                                     name))
                           (hx (and link (column-sortable-p column)
-                                   (hx-get (%link-merge link :sort next :page 1)
+                                   (hx-get (apply #'%link-merge link :sort next
+                                                  (when size (list :page 1)))
                                            :target target :swap :outer-html))))
                      (el :th (list :scope "col" :data-align (%align-attr column)
                                    :aria-sort (when (eq column sort-column)

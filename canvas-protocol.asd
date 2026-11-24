@@ -1,5 +1,5 @@
 (defsystem "canvas-protocol"
-  :version "0.2.1"
+  :version "0.2.2"
   :description "Live HTML canvases for cl-stack: components, htmx helpers, freeze, chart model, engine SVG, uploads (H4h)"
   :author "egao1980"
   :license "MIT"
