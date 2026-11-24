@@ -70,6 +70,25 @@
               ((consp object) (setf object (cdr object)))
               (t (return nil)))))
 
+(defun %control-char-p (char)
+  "CHAR is a Unicode control character (general category Cc: codes 0-31, 127-159)."
+  (let ((code (char-code char)))
+    (or (< code 32) (<= 127 code 159))))
+
+(defun %remove-controls (string &optional (keep ""))
+  "STRING without its control characters other than those in KEEP; STRING itself
+(no copy) when there is nothing to remove."
+  (flet ((drop-p (c) (and (%control-char-p c) (not (find c keep)))))
+    (if (find-if #'drop-p string) (remove-if #'drop-p string) string)))
+
+(defun %split (string char)
+  "STRING split at every CHAR -> fresh substrings in order, always at least one:
+\"\" -> (\"\"), \"a,,b\" -> (\"a\" \"\" \"b\") (UIOP:SPLIT-STRING gives NIL for \"\")."
+  (loop for start = 0 then (1+ end)
+        for end = (position char string :start start)
+        collect (subseq string start end)
+        while end))
+
 (defun %canvas-error (control &rest args)
   (error 'canvas-error :message (apply #'format nil control args)))
 

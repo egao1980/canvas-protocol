@@ -14,7 +14,7 @@ Live HTML canvases for [cl-stack](https://github.com/egao1980/cl-stack) (H4h). A
 | Engine SVG (0.2.0) | `svg-fragment` parses third-party SVG text with xml-protocol (no external entities, nothing fetched) into an html-protocol tree through an allowlist: ids, camelCase names, `<use href="#…">` kept; scripts, `on*`, `foreignObject`, external `href`, non-fragment `url(`, htmx attributes signal `unsafe-svg` (restart `strip-violations`); `<style>` is dropped |
 | Uploads (0.2.0) | `file-input` (`accept`, `multiple`), forms with a file input get `enctype="multipart/form-data"`, `(coerce-param part :file :max-size n :accept "image/*")` -> `uploaded-file` (filename, media type, size, octets or path) with `canvas-upload-too-large` and the usual `use-value` / `use-default` restarts |
 
-0.2.0 (HX2: issues #6 and #7) lands through team-solve: this branch holds the contract (exports, rules in each `src/*.lisp` header, `%hx2-pending` stubs, Rove suite).
+0.2.0 (HX2: issues #6 and #7): the exact rules are in each `src/*.lisp` header, and the Rove suite under `tests/` checks them.
 
 Servers live elsewhere: [rpc-backend-htmx](https://github.com/egao1980/rpc-backend-htmx) (htmx as an rpc-protocol transport) and the cl-stack-code web view.
 

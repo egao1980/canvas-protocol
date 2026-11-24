@@ -18,15 +18,6 @@
   "Stub marker for the H4h-0 team-solve run. Not a CANVAS-ERROR on purpose."
   (error 'h4h0-pending :name name))
 
-(define-condition hx2-pending (error)
-  ((name :initarg :name :reader hx2-pending-name))
-  (:report (lambda (c s)
-             (format s "HX2 pending: ~A is not implemented yet" (hx2-pending-name c)))))
-
-(defun %hx2-pending (name)
-  "Stub marker for the HX2 team-solve run (0.2.0). Not a CANVAS-ERROR on purpose."
-  (error 'hx2-pending :name name))
-
 (define-condition canvas-error (error)
   ((message :initarg :message :initform nil :reader canvas-error-message))
   (:report (lambda (c s)

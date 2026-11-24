@@ -156,6 +156,7 @@ check folds case itself."
         (%prefix-p "data-hx-" name)
         (%prefix-p "sse-" name)
         (%prefix-p "data-sse-" name)
+        (string= name "data-canvas-keys")
         (%attribute-violation name value)
         (and (member name +neutralized-url-attributes+ :test #'string=)
              (not (%offline-url-p value))))))
@@ -204,8 +205,11 @@ check folds case itself."
 (defun %keys-script (keys htmx)
   "PAGE's KEYS option -> the list of extra asset names after the SSE script.
 See the file header."
-  (declare (ignorable keys htmx))
-  (%hx2-pending 'page-keys))
+  (unless (eq keys t)
+    (%canvas-error "page :keys must be T or NIL, not ~S" keys))
+  (unless htmx
+    (%canvas-error "page :keys t needs :htmx t (the key bindings only send htmx requests)"))
+  (list "canvas-keys.js"))
 
 (defun page (body &key (title "canvas") (lang "en") (stylesheet :link) (htmx t) keys)
   (let ((resolver (%resolver))

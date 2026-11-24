@@ -183,26 +183,108 @@
 (defun %hx-push-url (push-url)
   (if (eq push-url t) "true" (%string-option :push-url push-url)))
 
+(defun %trim-blank (string)
+  "STRING without leading and trailing spaces and tabs."
+  (string-trim '(#\Space #\Tab) string))
+
 (defun hx-sync-value (sync)
   "SYNC keyword or string -> the hx-sync attribute string. See the file header."
-  (declare (ignorable sync))
-  (%hx2-pending 'hx-sync-value))
+  (cond ((keywordp sync)
+         (%str "this:" (or (cdr (assoc sync +htmx-sync-strategies+))
+                           (%canvas-error "unknown hx-sync strategy ~S" sync))))
+        ((stringp sync)
+         (%no-crlf "hx-sync" sync)
+         ;; htmx splits at ":" and reads two pieces: at most one ":".
+         (let ((pieces (%split sync #\:)))
+           (unless (and (<= (length pieces) 2)
+                        (plusp (length (%trim-blank (first pieces))))
+                        (or (null (rest pieces))
+                            (member (%trim-blank (second pieces)) +htmx-sync-strategies+
+                                    :key #'cdr :test #'string=)))
+             (%canvas-error "invalid hx-sync ~S (want SELECTOR or SELECTOR:STRATEGY)" sync))
+           sync))
+        (t (%canvas-error "hx-sync must be a keyword or string: ~S" sync))))
 
 (defun hx-swap-oob (&key swap target)
   "(:hx-swap-oob VALUE) for an out-of-band response fragment. See the file header."
-  (declare (ignorable swap target))
-  (%hx2-pending 'hx-swap-oob))
+  (let ((style (cond ((null swap) nil)
+                     ((keywordp swap)
+                      (or (cdr (assoc swap +htmx-swap-styles+))
+                          (%canvas-error "unknown hx-swap-oob style ~S" swap)))
+                     ;; A style string exactly: no modifiers (not HX-SWAP-VALUE).
+                     ((and (stringp swap)
+                           (member swap +htmx-swap-styles+ :key #'cdr :test #'string=))
+                      swap)
+                     (t (%canvas-error "hx-swap-oob :swap must be a swap style without modifiers: ~S"
+                                       swap)))))
+    (when target
+      (unless (and (stringp target) (plusp (length target)))
+        (%canvas-error "hx-swap-oob :target must be a non-empty string: ~S" target))
+      (%no-crlf "hx-swap-oob target" target))
+    (list :hx-swap-oob (cond (target (%str (or style "outerHTML") ":" target))
+                             (style style)
+                             (t "true")))))
+
+(defparameter +key-modifiers+
+  '(("ctrl" . "Ctrl") ("control" . "Ctrl") ("alt" . "Alt") ("shift" . "Shift") ("meta" . "Meta"))
+  "KEY-CHORD modifier spellings (case-insensitive) -> canonical modifier.")
+
+(defparameter +key-modifier-order+ '("Ctrl" "Alt" "Shift" "Meta")
+  "The order KEY-CHORD prints modifiers in.")
+
+(defun %chord-key (token)
+  "TOKEN as a chord key: a +CANVAS-KEY-NAMES+ name as listed, or one ASCII
+graphic character other than \"+\" (letters lowercased); else NIL."
+  (or (find token +canvas-key-names+ :test #'string-equal)
+      (and (= (length token) 1)
+           (<= 33 (char-code (char token 0)) 126)
+           (char/= (char token 0) #\+)
+           (string-downcase token))))
 
 (defun key-chord (string)
   "The canonical key chord for STRING (\"ctrl+Z\" -> \"Ctrl+z\"). See the file header."
-  (declare (ignorable string))
-  (%hx2-pending 'key-chord))
+  (unless (stringp string)
+    (%canvas-error "a key chord must be a string: ~S" string))
+  (let* ((tokens (%split string #\+))
+         (key (and (every #'plusp (mapcar #'length tokens))
+                   (%chord-key (car (last tokens)))))
+         (modifiers '()))
+    (unless key
+      (%canvas-error "invalid key chord ~S (want modifiers and one key, joined with +)" string))
+    (dolist (token (butlast tokens))
+      (let ((modifier (cdr (assoc token +key-modifiers+ :test #'string-equal))))
+        (when (or (null modifier) (member modifier modifiers :test #'string=))
+          (%canvas-error "invalid key chord ~S: unknown or repeated modifier ~S" string token))
+        (push modifier modifiers)))
+    (when (and (member "Shift" modifiers :test #'string=)
+               (or (string= key "Plus")
+                   (and (= (length key) 1) (not (%ascii-lower-p (char key 0))))))
+      (%canvas-error "invalid key chord ~S: with Shift the browser reports the shifted character"
+                     string))
+    (format nil "~{~A+~}~A"
+            (remove-if-not (lambda (m) (member m modifiers :test #'string=)) +key-modifier-order+)
+            key)))
+
+(defun %listens-for-keys-p (trigger)
+  "One comma-separated spec of TRIGGER, trimmed, has +CANVAS-KEY-EVENT+ as its
+first space-separated token."
+  (some (lambda (spec)
+          (let ((spec (%trim-blank spec)))
+            (string= +canvas-key-event+ spec :end2 (or (position #\Space spec) (length spec)))))
+        (%split trigger #\,)))
 
 (defun %hx-keys (keys trigger)
   "KEYS (a chord or a list of chords) and the caller's TRIGGER ->
 (values data-canvas-keys-string effective-trigger). See the file header."
-  (declare (ignorable keys trigger))
-  (%hx2-pending 'hx-keys))
+  (let ((chords (cond ((stringp keys) (list (key-chord keys)))
+                      ((and (consp keys) (%proper-list-p keys)) (mapcar #'key-chord keys))
+                      (t (%canvas-error "keys must be a key chord or a list of them: ~S" keys)))))
+    (values (format nil "~{~A~^ ~}" (remove-duplicates chords :test #'string= :from-end t))
+            (cond ((null trigger) +canvas-key-event+)
+                  ((%listens-for-keys-p (%string-option :trigger trigger))
+                   trigger)             ; "[" and CR/LF are still checked by %HX-TRIGGER
+                  (t (%canvas-error "with :keys, :trigger must listen for ~A: ~S"
+                                    +canvas-key-event+ trigger))))))
 
 (defun %hx (verb link target swap trigger select include vals push-url confirm indicator
             &optional sync keys)
