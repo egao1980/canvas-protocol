@@ -44,6 +44,18 @@ order as (:kind KIND :element LOCAL-NAME :attribute QNAME-or-NIL); KIND is one o
   (:report (lambda (c s)
              (format s "Canvas asset not found: ~S" (asset-error-name c)))))
 
+(define-condition canvas-asset-checksum-mismatch (canvas-error)
+  ((name :initarg :name :reader asset-error-name)
+   (expected :initarg :expected :reader asset-error-expected
+             :documentation "The :sha256 given to REGISTER-ASSET, lowercase hex.")
+   (actual :initarg :actual :reader asset-error-actual
+           :documentation "The SHA-256 of the bytes read, lowercase hex."))
+  (:documentation "0.3.0: REGISTER-ASSET / DEFINE-ASSET read bytes whose SHA-256 is not the
+:sha256 given. Signalled at registration (load time); nothing is registered.")
+  (:report (lambda (c s)
+             (format s "Canvas asset ~S: SHA-256 ~A, expected ~A"
+                     (asset-error-name c) (asset-error-actual c) (asset-error-expected c)))))
+
 ;;; Form coercion
 
 (defparameter +coercion-types+ '(:string :integer :float :boolean :date :choice :file)
