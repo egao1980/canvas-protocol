@@ -1,3 +1,4 @@
 assets/** -text
 *.lisp text eol=lf
 *.asd text eol=lf
+tests/fixtures/** -text

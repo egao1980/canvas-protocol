@@ -1,5 +1,5 @@
 (defsystem "canvas-protocol"
-  :version "0.2.2"
+  :version "0.3.0"
   :description "Live HTML canvases for cl-stack: components, htmx helpers, freeze, chart model, engine SVG, uploads (H4h)"
   :author "egao1980"
   :license "MIT"
@@ -11,7 +11,9 @@
                (:version "json-backend-jzon" "0.2.2")
                (:version "xml-protocol" "0.1.0")
                (:version "xml-backend-native" "0.1.1")
-               (:version "mime-protocol" "0.3.1"))
+               (:version "mime-protocol" "0.3.1")
+               (:version "crypto-protocol" "0.2.0")
+               (:version "crypto-backend-ironclad" "0.2.1"))
   :serial t
   :components ((:module "assets"
                 :components ((:static-file "htmx.min.js")
@@ -57,6 +59,7 @@
                (:file "csp-test")
                (:file "freeze-test")
                (:file "assets-test")
+               (:file "app-assets-test")
                (:file "chart-test")
                (:file "theme-test")
                (:file "hx-attributes-test")

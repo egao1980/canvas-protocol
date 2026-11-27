@@ -9,6 +9,7 @@
    #:canvas-coercion-error #:coercion-error-field #:coercion-error-value
    #:coercion-error-expected #:coercion-error-detail #:coercion-error-text
    #:canvas-asset-not-found #:asset-error-name
+   #:canvas-asset-checksum-mismatch #:asset-error-expected #:asset-error-actual
    #:unsafe-svg #:canvas-upload-too-large #:upload-error-size
    #:invalid-chart #:invalid-chart-field #:invalid-chart-reason
    #:chart-backend-missing #:chart-backend-missing-chart
@@ -55,6 +56,8 @@
    #:+htmx-version+ #:+htmx-sse-version+
    #:asset-names #:asset-bytes #:asset-content-type #:asset-sha256
    #:asset-info #:asset-license
+   ;; app assets (0.3.0)
+   #:register-asset #:define-asset #:remove-asset #:asset-name-p #:asset-octets
    #:*canvas-theme* #:theme-stylesheet #:canvas-stylesheet
    ;; charts
    #:chart #:chart-p #:make-chart #:chart-kind #:chart-series #:chart-x-axis

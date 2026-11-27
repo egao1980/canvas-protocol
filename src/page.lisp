@@ -59,6 +59,30 @@
 ;;; TITLE default: the lowercased symbol name, or "canvas" for a function object.
 ;;; htmx is dropped, not disabled (decision: a frozen file has no server).
 ;;; Byte-deterministic for the same function, args and image state.
+;;;
+;;; Scripts (0.3.0, canvas-protocol#15). PAGE &key (scripts nil): a list of
+;;; entries, each an asset name (ASSET-NAMES: built-in or REGISTER-ASSET) or
+;;; (name &key module defer). Each becomes
+;;;   <script src="(resolve-asset-url r name)"[ type="module"][ defer=""]></script>
+;;; at the end of <head>, after the built-in scripts (htmx, htmx-ext-sse,
+;;; canvas-keys), in the given order; written with :htmx nil too (an app
+;;; script need not use htmx). A resolver giving NIL for a name skips it, as
+;;; for the built-ins. An unknown name -> CANVAS-ASSET-NOT-FOUND; an asset
+;;; whose content type is not text/javascript or application/javascript (a
+;;; .wasm is fetched by its loader script, never a <script>), a name loaded
+;;; twice (built-ins included), a malformed entry or an unknown option ->
+;;; CANVAS-ERROR. All checked before the body is rendered. :scripts nil leaves
+;;; the document byte-identical to 0.2. Every script is same-origin with src
+;;; and no text, so the CSP stays script-src 'self' (a WASM toolkit also needs
+;;; 'wasm-unsafe-eval' in the server's policy to compile its module).
+;;;
+;;; FREEZE &key (scripts nil): decision: opt-in. The same entries, checked the
+;;; same way, become <script src="NAME"...></script> after the <style>, NAME
+;;; as a relative URL: for a frozen page served as a static file next to its
+;;; assets (copy each ASSET-BYTES to that relative path). The body is still
+;;; NEUTRALIZEd (no htmx, no URLs, no data-canvas-keys); the scripts work on
+;;; the static DOM. :scripts nil -> byte-identical to 0.2: frozen pages run no
+;;; script unless asked.
 
 (defparameter +htmx-config+
   '(("allowEval" . nil)
@@ -211,9 +235,49 @@ See the file header."
     (%canvas-error "page :keys t needs :htmx t (the key bindings only send htmx requests)"))
   (list "canvas-keys.js"))
 
-(defun page (body &key (title "canvas") (lang "en") (stylesheet :link) (htmx t) keys)
-  (let ((resolver (%resolver))
-        (extra-scripts (and keys (%keys-script keys htmx))))
+(defun %script-entry (entry)
+  "One :scripts entry -> (name module defer). See the file header (Scripts)."
+  (multiple-value-bind (name options)
+      (cond ((stringp entry) (values entry nil))
+            ((and (consp entry) (stringp (car entry)) (%plist-p (cdr entry)))
+             (values (car entry) (cdr entry)))
+            (t (%canvas-error ":scripts entry must be an asset name or (name &key module defer), not ~S"
+                              entry)))
+    (loop for (key) on options by #'cddr
+          unless (member key '(:module :defer))
+            do (%canvas-error ":scripts entry ~S: unknown option ~S (:module, :defer)" entry key))
+    (unless (%asset-entry name)
+      (error 'canvas-asset-not-found :name name))
+    (let ((type (asset-content-type name)))
+      (unless (or (%prefix-p "text/javascript" type) (%prefix-p "application/javascript" type))
+        (%canvas-error ":scripts asset ~S is ~A, not JavaScript" name type)))
+    (list name (and (getf options :module) t) (and (getf options :defer) t))))
+
+(defun %script-entries (scripts loaded)
+  "PAGE / FREEZE :scripts -> a list of (name module defer). LOADED: the names
+the head already loads (a repeat -> CANVAS-ERROR)."
+  (unless (and (listp scripts) (null (cdr (last scripts))))
+    (%canvas-error ":scripts must be a list of asset names, not ~S" scripts))
+  (let ((entries (mapcar #'%script-entry scripts)))
+    (loop for (entry . rest) on entries
+          for name = (first entry)
+          when (or (member name loaded :test #'string=)
+                   (member name rest :key #'first :test #'string=))
+            do (%canvas-error ":scripts loads ~S twice" name))
+    entries))
+
+(defun %script-element (url module defer)
+  (%element "script" (append (list (cons "src" url))
+                             (when module (list (cons "type" "module")))
+                             (when defer (list (cons "defer" ""))))))
+
+(defun page (body &key (title "canvas") (lang "en") (stylesheet :link) (htmx t) keys scripts)
+  (let* ((resolver (%resolver))
+         (extra-scripts (and keys (%keys-script keys htmx)))
+         (app-scripts (and scripts
+                           (%script-entries scripts
+                                            (and htmx (append '("htmx.min.js" "htmx-ext-sse.min.js")
+                                                              extra-scripts))))))
     (unless (member stylesheet '(:link :inline nil))
       (%canvas-error "stylesheet must be :link, :inline or NIL, not ~S" stylesheet))
     (let* ((nodes (%nodes (render body)))
@@ -248,10 +312,13 @@ See the file header."
                                              extra-scripts)
                          append (asset-element name
                                                (lambda (url)
-                                                 (%element "script" (list (cons "src" url))))))))
+                                                 (%element "script" (list (cons "src" url)))))))
+                 (loop for (name module defer) in app-scripts
+                       append (asset-element name
+                                             (lambda (url) (%script-element url module defer)))))
          nodes)))))
 
-(defun freeze (fn &key args title)
+(defun freeze (fn &key args title scripts)
   (unless (or (functionp fn)
               (and fn (symbolp fn) (fboundp fn)
                    (not (macro-function fn)) (not (special-operator-p fn))))
@@ -259,9 +326,13 @@ See the file header."
   (unless (%plist-p args)
     (%canvas-error "freeze :args must be a plist: ~S" args))
   (let ((title (or title (if (symbolp fn) (string-downcase (symbol-name fn)) "canvas")))
+        (app-scripts (and scripts (%script-entries scripts nil)))
         (*canvas-resolver* (make-freeze-resolver)))
     (to-html (%document "en"
                         (append (%head-start)
-                                (list (el :title nil title) (%style-element)))
+                                (list (el :title nil title) (%style-element))
+                                ;; Relative src = the asset name (FREEZE :scripts, file header).
+                                (loop for (name module defer) in app-scripts
+                                      collect (%script-element name module defer)))
                         (%nodes (neutralize (apply fn args)))
                         :body-attributes '(("data-canvas-frozen" . ""))))))
